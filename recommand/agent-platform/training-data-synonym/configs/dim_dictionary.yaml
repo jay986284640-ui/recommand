@@ -1,0 +1,94 @@
+# 8 维商业属性字典(对齐兴业 O2O 真实业务)
+# spec v2.4 / data-model.md / contracts/param_op_types_v2.md
+# 字典变更触发 Stage 1 增量重算(spec FR-006 / research D-003)
+
+_meta:
+  version: 2.0          # 7 维 → 8 维升级 (consumable_type added)
+  spec_version: v2.4
+  total_dims: 8
+
+# ──── 商品侧 4 维 ────
+category:
+  desc: 品类(从 o2o Cat_Nm 抽取,覆盖 12 类)
+  values:
+    - 咖啡
+    - 快餐
+    - 奶茶
+    - 烘焙
+    - 便利店
+    - 中餐
+    - 西餐
+    - 日料
+    - 火锅
+    - 烧烤
+    - 甜品
+    - 水果
+  op: in
+
+consumable_type:
+  desc: 吃 / 喝二分(由 category 映射,见 consumable_type_map.yaml)
+  values: [food, drink, mixed, none]
+  op: eq
+
+merchant:
+  desc: 品牌(从 o2o Brnd_Nm 抽取 + brand_dictionary.yaml 补全)
+  values:
+    - 星巴克
+    - 瑞幸
+    - Costa
+    - 喜茶
+    - 奈雪
+    - 蜜雪冰城
+    - 一点点
+    - 肯德基
+    - 麦当劳
+    - 汉堡王
+    - 必胜客
+    - 味多美
+    - 好利来
+    - 7_Eleven
+    - 全家
+    - 罗森
+    - 海底捞
+    - 真功夫
+    - 永和大王
+  op: in
+
+avg_prc:
+  desc: 人均价格区间(从 o2o Avg_Prc / coupon.facePrice 桶化)
+  values: ["0-30", "30-50", "50-100", "100-200", "200+"]
+  op: in
+
+# ──── 距离 1 维(SFT 字典直采,与 lng/lat 解耦) ────
+distance:
+  desc: 用户到门店距离桶(SFT 阶段字典直采,不读 lng/lat)
+  values: ["0-500", "500-1000", "1000-3000", "3000+"]
+  op: in           # SFT 中可 in / not_in
+
+# ──── 用户侧 3 维 ────
+age:
+  desc: 客户年龄段(从 CDM.SEX_ID + birth_dt 推断)
+  values: ["18-25", "25-35", "35-45", "45-55", "55+"]
+  op: in
+
+occasion:
+  desc: 消费场合(从 c10.evt_time + prd_typ 推断)
+  values:
+    - 早餐
+    - 午餐
+    - 下午茶
+    - 晚餐
+    - 夜宵
+    - 聚会
+    - 工作日
+    - 周末
+    - 节日
+    - 自取
+    - 外卖
+    - 堂食
+  op: in
+
+taste:
+  desc: 口味偏好(从用户历史订单 + 券 productDesc 推断)
+  values: [甜, 咸, 辣, 麻, 酸, 苦, 鲜, 清淡, 浓郁, 冰, 热, 温]
+  op: contains      # 数组语义,允许多值

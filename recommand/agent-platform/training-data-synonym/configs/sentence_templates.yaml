@@ -1,0 +1,23 @@
+_meta:
+  version: 1.0
+  description: Stage 2 句式骨架 5~8 套(per FR-014 多样性控制)
+
+templates:
+  - name: query_first
+    first_user: "{intent_verb}{category_or_consumable}{optional_distance}{optional_occasion}"
+    weight: 0.30
+  - name: scenario_first
+    first_user: "{occasion}想{category_or_consumable},{optional_distance}"
+    weight: 0.25
+  - name: constraint_first
+    first_user: "{distance_constraint},推荐{category_or_consumable}"
+    weight: 0.20
+  - name: vague_first
+    first_user: "想吃点东西 / 想喝点东西,有推荐吗"
+    weight: 0.10
+  - name: direct_first
+    first_user: "{merchant}的{category}"
+    weight: 0.10
+  - name: pivot_start
+    first_user: "算了不看{category}了,看{another_category}"
+    weight: 0.05

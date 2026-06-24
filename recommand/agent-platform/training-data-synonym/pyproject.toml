@@ -1,0 +1,50 @@
+[project]
+name = "training-data-synonym"
+version = "2.0.0"
+description = "兴业 O2O 三品类 SFT 语料生成流水线 (Hive 直读 + 8 维标签 + 5 轮对话)"
+requires-python = ">=3.11"
+dependencies = [
+    "pyyaml>=6.0",
+    "jsonschema>=4.18",
+    "tenacity>=8.2",
+    "click>=8.1",
+]
+
+[project.optional-dependencies]
+spark = ["pyspark>=3.5,<4.0"]
+hive = ["pyhive[hive]>=0.7"]
+test = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "hypothesis>=6.82",
+    "ruff>=0.1",
+    "black>=23.7",
+]
+
+[project.scripts]
+training-data-synonym = "training_data_synonym.cli:main"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["training_data_synonym", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP", "B", "C4", "RET", "SIM", "PL"]
+ignore = ["PLR0913", "PLR0912", "PLR0915"]
+
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short --strict-markers"
+markers = [
+    "spark: requires PySpark + Hive cluster (deselect by default)",
+    "integration: integration tests using MockHiveReader + MockLLMClient",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["training_data_synonym*"]

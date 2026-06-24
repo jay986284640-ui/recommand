@@ -1,0 +1,24 @@
+_meta:
+  version: 1.0
+  description: 5 类 intent 关键词模板(per FR-015/016)
+  item_type_bias:
+    meituan_shop: [search_item, browse]
+    self_shop:    [search_item, browse]
+    coupon:       [use_coupon, pay, search_item]
+
+intents:
+  search_item:
+    weight: 0.50
+    keywords: [想找, 想看, 推荐, 有没有, 帮我找, 搜一下, 看看]
+  use_coupon:
+    weight: 0.20
+    keywords: [用券, 核销, 券码, 出示券, 扫码核销]
+  pay:
+    weight: 0.10
+    keywords: [买单, 付款, 结账, 支付]
+  view_order:
+    weight: 0.10
+    keywords: [订单, 查订单, 历史订单, 看一下订单]
+  browse:
+    weight: 0.10
+    keywords: [随便看看, 逛逛, 有什么]

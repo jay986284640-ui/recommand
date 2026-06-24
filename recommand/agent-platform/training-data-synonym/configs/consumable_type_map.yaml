@@ -1,0 +1,51 @@
+# category → consumable_type 映射表(per FR-008c / research D-007)
+# `derived` 路径不耗 LLM;映射失败 → LLM 兜底 (tag_source.consumable_type = ai)
+
+_meta:
+  version: 1.0
+  spec_version: v2.4
+  description: category(品类) → consumable_type(吃 / 喝)的映射表;FR-008c 用
+
+map:
+  drink:
+    - 咖啡
+    - 奶茶
+  food:
+    - 快餐
+    - 中餐
+    - 西餐
+    - 日料
+    - 火锅
+    - 烧烤
+    - 烘焙
+    - 甜品
+  mixed:
+    - 便利店
+    - 水果
+default: none                # 未识别 / 非餐饮兜底
+
+# FR-008c.5 — 优惠券文本判定关键词种子(优先于 category 映射)
+coupon_text_hints:
+  drink:
+    - 咖啡
+    - 拿铁
+    - 美式
+    - 奶茶
+    - 茶饮
+    - 果汁
+    - 饮品
+    - 椰汁
+    - 柠檬
+  food:
+    - 汉堡
+    - 炸鸡
+    - 面
+    - 烤
+    - 寿司
+    - 火锅
+    - 套餐
+    - 米饭
+    - 烤肉
+  mixed:
+    - 便利店
+    - 综合

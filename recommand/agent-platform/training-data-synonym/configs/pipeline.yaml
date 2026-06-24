@@ -1,0 +1,111 @@
+# 顶层运行配置(spec Configuration Snapshot v2.4)
+# 字典 / 映射文件由独立 yaml 加载(common/config.py 合并)
+
+training_data_synonym:
+  input:
+    sql_path: /opt/recommand/recommand/tabale_structer.sql
+    source: hive                      # hive | mock
+    hive:
+      catalog: spark_catalog          # 由部署方注入
+      databases:
+        recommand_workspace: recommand_workspace
+        cdm: cdm
+      etl_dt:
+        mode: latest_n
+        latest_n: 1
+        # range: ["20260601", "20260615"]
+        # single: "20260620"
+      sample_n_per_type: 100         # demo;全量留空表示读全表
+      sensitive_columns_blocklist:
+        - MASTERCARD_CUST_ID
+        - Crt_Psn_Id
+        - Opr_Psn_Id
+        - creator
+        - updatePerson
+    mock:
+      fixture_dir: ./tests/fixtures/hive/
+    item_types: [meituan_shop, self_shop, coupon]
+
+  enrichment:                          # Stage 1
+    enabled: true
+    mode: incremental                  # full | incremental
+    output_path: ./item_tags.jsonl
+    failures_path: ./tag_enrichment_failures.jsonl
+    state_path: ./tag_enrichment_state.parquet
+    llm:
+      model: claude-haiku-4-5
+      timeout_seconds: 15
+      batch_size: 16
+      temperature: 0.3                 # 推断要稳,温度低
+    dictionary_path: ./configs/dim_dictionary.yaml
+    brand_dictionary_path: ./configs/brand_dictionary.yaml
+
+  sft:                                 # Stage 2
+    enabled: true
+    input_path: ./item_tags.jsonl
+    output_path: ./sft_corpus.jsonl
+    failures_path: ./sft_failures.jsonl
+    cold_start_path: ./cold_start_items.jsonl
+    count_per_item: 8                  # 5~12
+    max_message_turns: 5               # 1~5(本版从 4 上调至 5)
+    turn_distribution: [0.10, 0.20, 0.35, 0.25, 0.10]
+    negative_ratio: 0.10
+    negative_types: [reject, pivot, unsatisfiable]
+    llm:
+      model: claude-haiku-4-5
+      timeout_seconds: 15
+      batch_size: 16
+      temperature: 0.7                 # 多样性要高
+    coverage:
+      forced_coverage: true            # FR-011 强制覆盖
+      template_repeat_limit: 0.20      # SC-007
+    distance_sampling:                 # FR-013b — 与 lng/lat 解耦的字典采样
+      distance_param_ratio: 0.30
+      distance_bucket_weights:
+        "0-500":     0.25
+        "500-1000":  0.25
+        "1000-3000": 0.25
+        "3000+":     0.25
+      order_by_distribution:
+        distance: 0.30
+        price:    0.20
+        rating:   0.15
+        time:     0.10
+        null:     0.25
+      order_by_distance_when_param_present: 0.60
+      order_by_distance_when_param_null:    0.05
+
+  cleaning:
+    enabled: true
+    cleaned_path: ./cleaned_training_data.jsonl
+    cleaning_failures_path: ./cleaning_failures.jsonl
+    min_message_length: 10
+    template_repeat_threshold: 0.30
+    template_repeat_target: 0.20
+    min_retention_rate: 0.85
+    alert_retention_rate: 0.50
+
+  distribution:
+    enabled: true
+    report_path: ./distribution_report.json
+    balancing_failures_path: ./balancing_failures.jsonl
+    min_class_ratio: 0.03
+    oversample_factor: 2
+    max_oversample_ratio: 5
+    intent_min_ratio: 0.03
+    param_min_ratio: 0.05
+    op_not_in_min_ratio: 0.03
+    negative_tolerance: 0.02
+
+  split:
+    enabled: true
+    train_ratio: 0.8
+    val_ratio: 0.1
+    test_ratio: 0.1
+    train_path: ./train.jsonl
+    val_path: ./val.jsonl
+    test_path: ./test.jsonl
+    real_data_priority: true
+    real_data_min_ratio: 0.5
+
+  type_balance_strategy: source        # source | balanced

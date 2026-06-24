@@ -1,0 +1,97 @@
+# 优惠推荐 Agent 数据管线 - 兴业生活(美团门店券)配置
+#
+# 数据来源:profile_extract.sql 产出的 3 张派生表
+#   recommand_workspace.user_profile_recommand   用户画像
+#   recommand_workspace.item_profile             门店画像
+#   recommand_workspace.user_seq_recommand       用户行为序列
+#
+# 跑法:
+#   python run_adapter.py  --config configs/datasets/xingye_coupon.yaml --output ./pipeline_output/intermediate
+#   python run_pipeline.py --config configs/datasets/xingye_coupon.yaml
+
+data:
+  adapter: xingye_coupon
+  adapter_config:
+    hive_database: recommand_workspace
+    users_table: user_profile_recommand
+    items_table: item_profile
+    interactions_table: user_seq_recommand
+
+    # time 字段格式:ms(Unix 毫秒)/s(Unix 秒)/datetime(yyyy-MM-dd HH:mm:ss)
+    time_format: ms
+
+    # 事件→action 映射(可覆盖默认值;省略时用适配器内嵌 DEFAULT_ACTION_MAPPING)
+    # action_mapping:
+    #   $pageview: view
+    #   $element_click: click
+    #   coupon_receive: receive
+
+    # 共现数据(从 interactions 派生)
+    cooccurrence_enabled: true
+    cooccurrence_window_days: 30
+    cooccurrence_min_cooccur: 2          # 至少共现 2 次才算
+    cooccurrence_max_related: 50         # 单个 item 最多保留 50 个相关 item
+
+    # 列名覆盖(若 Hive 表 schema 与 profile_extract.sql 默认别名不一致时使用)
+    user_id_column: custref_no
+    item_id_column: str_id
+    interaction_user_column: custref_no
+    interaction_item_column: shopid
+    interaction_time_column: event_time
+
+# 步骤 1:数据质量稽核
+audit:
+  enabled: true
+  output_dir: ./pipeline_output/audit
+  outlier_rules:
+    - field: timestamp
+      min: 1420070400        # 2015-01-01 unix 秒
+
+# 步骤 2:数据清洗
+cleaning:
+  field_completeness: true
+  required_fields: [user_id, item_id, timestamp]
+  product_exists: true
+  time: true
+  years: 3
+  deduplicate: true
+  dedup_column: [user_id, item_id, timestamp, action]
+  kcore: true
+  kcore_k: 3                  # 初版数据稀疏,K-core 调低
+  burst_review: false         # 非评论数据,关掉
+  user_item_dedup: true
+
+# 步骤 3:文本标准化
+normalization:
+  enabled: true
+  df_config:
+    items:
+      - normalizer: unicode_normalizer
+        columns: [item_title]
+      - normalizer: whitespace_normalizer
+        columns: [item_title]
+
+# 步骤 4:特征提取
+feature_extraction:
+  enabled: true
+  output_dir: ./pipeline_output/features
+  output_format: parquet
+  item_features: true
+  user_features: true
+  user_interaction_history: true
+  co_purchase: true
+  impression_log: false
+  max_seq_length: 200
+  co_purchase_window_days: 30
+  new_user_threshold: 3
+
+# 输出
+output:
+  dir: ./pipeline_output
+  format: parquet
+
+# Spark
+spark:
+  master: local[*]
+  memory: 4g
+  partitions: 8

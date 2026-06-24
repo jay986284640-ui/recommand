@@ -1,0 +1,85 @@
+# 亚马逊数据清洗配置文件
+# 可通过 --config 参数指定配置文件路径
+
+# 数据源配置
+data:
+  review_input: /data/recommand_data/amazon-reviews/amazon_2018/review_categories/Movies_and_TV.json  # 评论数据输入路径 (必填)
+  meta_input: /data/recommand_data/amazon-reviews/amazon_2018/meta_categories/meta_Movies_and_TV.json  # 元数据输入路径 (必填)
+  output: ../output/Movies_and_TV  # 输出目录 (必填)
+  source_type: amazon_old   # 数据源类型: amazon_new | amazon_old
+
+
+
+# 清洗参数配置
+cleaning:
+  # 步骤1: 字段完整性过滤
+  field_completeness:
+    enabled: true
+    required_fields:
+      - user_id
+      - product_id
+      - review_text
+      - timestamp
+
+  # 步骤2: 异常值过滤
+  outlier:
+    enabled: true
+    min_rating: 1.0         # 最小评分
+    max_rating: 5.0         # 最大评分
+    min_year: 1990          # 最早年份
+
+  # 步骤3: 数据质量过滤
+  quality:
+    enabled: true
+    min_text_length: 10     # 最小文本长度
+
+  # 步骤4: 垃圾数据过滤
+  spam:
+    enabled: true
+    custom_patterns: [ ]     # 自定义垃圾模式（可选）
+
+  # 步骤5: 时间过滤
+  time:
+    enabled: true
+    years: 10               # 保留最近N年
+
+  # 步骤6: 文本长度过滤
+  text_length:
+    enabled: true
+    max_length: 700         # 最大文本长度
+
+  # 步骤7: 去重
+  deduplicate:
+    enabled: true
+    key_column: review_text # 去重字段
+
+  # 步骤8: 突发评论过滤（短时间内评论次数过多）
+  burst_review:
+    enabled: true
+    time_window_minutes: 10  #时间窗口（分钟）
+    max_reviews: 50         # 窗口内最大评论数
+
+  # 步骤9: 用户-商品连续去重（按时间排序后，相邻的同一用户-商品记录只保留一条，在K-core之前）
+  user_product_dedup:
+    enabled: true
+
+  # 步骤10: K-core过滤
+  kcore:
+    enabled: true
+    k: 5                    # K-core阈值
+
+# 输出配置
+output:
+  format: json              # 输出格式: json | parquet | csv
+
+# Spark配置
+spark:
+  master: local[*]             # Spark master URL: local[*] | spark://host:7077
+  memory: 128g                   # driver内存
+  driver_cores: 16              # driver CPU核心数
+  executor_cores: 8            # executor CPU核心数（仅cluster模式生效）
+  executor_memory: 64g          # executor内存（仅cluster模式生效）
+  executor_numbers: 4          # executor数量（仅cluster模式生效）
+  partitions: 8                # shuffle分区数
+  local_dir: /data/l00612824/tmp    # shuffle临时目录
+  checkpoint_dir: /data/l00612824/tmp/checkpoint  # checkpoint存储目录

@@ -1,0 +1,9 @@
+pyyaml>=6.0
+jsonschema>=4.18
+tenacity>=8.2
+click>=8.1
+pytest>=7.4
+pytest-cov>=4.1
+hypothesis>=6.82
+ruff>=0.1
+black>=23.7

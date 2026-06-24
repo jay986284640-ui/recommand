@@ -1,0 +1,121 @@
+# Spark 配置
+spark:
+  # 运行模式: local 或 cluster
+  mode: local
+  # 应用名称
+  app_name: Amazon_All_Beauty_Analysis
+  # Driver 内存
+  driver_memory: 4g
+  # Executor 数量 (cluster模式时使用)
+  executor_instances: 2
+  # Executor 内存 (cluster模式时使用)
+  executor_memory: 2g
+  # Shuffle 分区数
+  shuffle_partitions: 8
+
+# 数据路径配置
+data:
+  # 数据源类型: amazon_new (All_Beauty格式) | amazon_old (Books/Movies格式)
+  source_type: amazon_old
+  # 评论数据文件路径
+  review_file: ../data/Books_sample.json
+  # 元数据文件路径
+  meta_file: ../data/meta_Books_sample.json
+  # 输出目录
+  output_dir: ../output
+
+# 数据源配置 (不同数据源使用不同的字段映射)
+source_config:
+  # 新版 Amazon 数据 (All_Beauty)
+  amazon_new:
+    review_schema:
+      rating: float
+      title: string
+      text: string
+      images: string
+      asin: string
+      parent_asin: string
+      user_id: string
+      timestamp: int
+      helpful_vote: int
+      verified_purchase: string
+    field_mapping:
+      rating: rating
+      user_id: user_id
+      product_id: parent_asin
+      review_text: text
+      review_title: title
+      timestamp: timestamp
+      verified_purchase: verified_purchase
+      helpful_vote: helpful_vote
+
+  # 旧版 Amazon 数据 (Books, Movies, Video Games)
+  amazon_old:
+    review_schema:
+      overall: float
+      summary: string
+      reviewText: string
+      reviewerID: string
+      asin: string
+      unixReviewTime: int
+      verified: string
+      style: string
+      reviewTime: string
+    field_mapping:
+      rating: overall
+      user_id: reviewerID
+      product_id: asin
+      review_text: reviewText
+      review_title: summary
+      timestamp: unixReviewTime
+      verified_purchase: verified
+
+# 分析配置
+analysis:
+  # 基础分析功能 (1-8)
+  basic_analysis:
+    - user_review_count      # 每个用户发表的评论数量
+    - product_review_count   # 每个商品的评论数量
+    - product_rating_stats   # 每个商品的评分统计
+    - rating_by_time         # 评分随时间变化
+    - rating_distribution    # 商品平均分分布
+    - review_length_stats    # 评论长度统计
+    - title_length_stats     # 标题长度统计
+    - null_statistics        # 空值占比
+
+  # 深度分析功能 (9-18)
+  deep_analysis:
+    - verified_purchase_comparison     # 验证购买 vs 非验证购买
+    - first_vs_subsequent_review       # 首次评论 vs 后续评论
+    - weekday_rating                   # 按星期评分分布
+    - length_by_rating                 # 评论长度与评分关系
+    - rating_polarization              # 评分两极分化
+    - product_review_tail              # 商品评论数长尾分布
+    - user_rating_trend                # 用户评分趋势
+    - helpful_vote_analysis            # Helpfulness Vote 分布
+    - popularity_comparison            # 热门 vs 冷门商品
+    - monthly_rating_distribution      # 评分分布随时间变化
+
+# 可视化配置
+visualization:
+  # 是否生成可视化图表
+  enabled: true
+  # 图表 DPI
+  dpi: 150
+  # 图表样式
+  style: seaborn-v0_8-whitegrid
+  # 颜色方案
+  colors:
+    - '#e74c3c'
+    - '#e67e22'
+    - '#f1c40f'
+    - '#2ecc71'
+    - '#3498db'
+    - '#9b59b6'
+    - '#1abc9c'
+    - '#34495e'
+
+# 日志配置
+logging:
+  level: WARN
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

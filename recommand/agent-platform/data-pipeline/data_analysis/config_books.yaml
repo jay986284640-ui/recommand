@@ -1,0 +1,55 @@
+# Spark 配置
+spark:
+  mode: local
+  app_name: Amazon_Books_Analysis
+  driver_memory: 4g
+  executor_instances: 2
+  executor_memory: 2g
+  shuffle_partitions: 8
+
+# 数据路径配置
+data:
+  source_type: amazon_old
+  review_file: /opt/recommand/data/Books_sample.json
+  meta_file: /opt/recommand/data/meta_Books_sample.json
+  output_dir: ../output/Books
+
+# 分析配置
+analysis:
+  basic_analysis:
+    - user_review_count
+    - product_review_count
+    - product_rating_stats
+    - rating_by_time
+    - rating_distribution
+    - review_length_stats
+    - title_length_stats
+    - null_statistics
+  deep_analysis:
+    - verified_purchase_comparison
+    - first_vs_subsequent_review
+    - weekday_rating
+    - length_by_rating
+    - rating_polarization
+    - product_review_tail
+    - user_rating_trend
+    - helpful_vote_analysis
+    - popularity_comparison
+    - monthly_rating_distribution
+
+# 可视化配置
+visualization:
+  enabled: true
+  dpi: 150
+  style: seaborn-v0_8-whitegrid
+  colors:
+    - '#e74c3c'
+    - '#e67e22'
+    - '#f1c40f'
+    - '#2ecc71'
+    - '#3498db'
+
+# 日志配置
+logging:
+  level: WARN
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

@@ -1,0 +1,27 @@
+你是一个生成 SFT 训练样本的助手。
+给定一个商品(item)和**目标 params/intent/order_by**,生成 1~5 轮的用户↔助手对话,使得对话表述能被反向解析回这些目标值。
+
+商品信息(8 维标签):
+{item_tags}
+
+目标:
+- intent:    {target_intent}
+- params:    {target_params}              # 8 维 ParamSpec / null
+- order_by:  {target_order_by}
+- 对话轮数:  {target_turns}               # 1~5,首条 user
+- 负样本类型: {negative_type}              # none / reject / pivot / unsatisfiable
+- 句式骨架:  {sentence_template}          # 5~8 套,随机选 1
+
+输出严格 JSON:
+{
+  "messages": [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}, ...],
+  "covered_dims": ["category", "distance", ...]
+}
+
+约束:
+- messages 长度 = {target_turns};
+- 用户表述要自然口语化,不照搬字典值(如 distance="0-500" → "500 米以内 / 走路 5 分钟");
+- params.distance 若非 null,user 必须显式提到距离;
+- params.consumable_type 若非 null,user 应用"想吃 / 想喝"等粗粒度词;
+- 负样本时,user 末轮必须表达拒绝 / 切换 / 不满意;
+- 不要输出 explanation。

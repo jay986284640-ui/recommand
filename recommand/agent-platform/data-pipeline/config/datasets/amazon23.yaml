@@ -1,0 +1,152 @@
+# Amazon 数据集配置文件
+
+# 数据源配置
+data:
+  adapter: amazon_new          # 适配器名称: amazon | amazon_old | tiktok | taobao 等
+  # 适配器专用配置
+  adapter_config:
+    review_input: ""  # 评论/交互数据输入路径
+    meta_input: ""  # 元数据/物品数据输入路径
+    co_occurrence_input: ""  # 共现数据输入路径（可选）
+
+# 交互信息清洗过滤配置
+cleaning:
+  # 字段完整性过滤
+  field_completeness: true
+  required_fields:
+    - user_id
+    - item_id
+    - timestamp
+
+  # 物品存在性过滤（需要 meta 数据）
+  product_exists: true
+
+  # 时间过滤（保留最近 N 年）
+  time: true
+  years: 18
+
+  # 去重
+  deduplicate: true
+  dedup_column: "review_text"  # 如果为空则根据所有列去重
+
+  # 突发评论过滤
+  burst_review: true
+  burst_window_minutes: 10
+  burst_max_reviews: 50
+
+  # 用户-物品连续去重
+  user_item_dedup: true
+
+  # K-core 过滤
+  kcore: true
+  kcore_k: 5
+  kcore_checkpoint_dir: "/tmp/checkpoint"  # checkpoint 目录，用于大数据集
+
+  # =====================================================
+  # 通用规则过滤 - 交互数据
+  # 支持的算子: eq, neq, gt, gte, lt, lte, range
+  #             length_lt, length_gt, length_eq, length_range
+  #             contains, not_contains, startswith, endswith
+  #             matches, not_matches (正则)
+  #             is_in, not_in, is_null, is_not_empty
+  # 逻辑: AND (所有条件都满足) 或 OR (任一条件满足)
+  # =====================================================
+  interaction_rules:
+    # 示例: 评分范围过滤
+    - field: rating
+      operator: range
+      min: 1
+      max: 5
+    # 示例: 文本长度过滤
+    - field: review_text
+      operator: length_gt
+      value: 10
+    # 示例: 数值等于某值
+    # - field: verified_purchase
+    #   operator: eq
+    #   value: true
+    # 示例: 正则匹配
+    # - field: user_id
+    #   operator: matches
+    #   pattern: "^A[0-9]+$"
+
+  interaction_rules_logic: "AND"  # AND 或 OR
+
+  # 通用规则过滤 - 用户数据
+  user_rules: []
+  user_rules_logic: "AND"
+
+  # 通用规则过滤 - 物品数据
+  item_rules: []
+  item_rules_logic: "AND"
+
+# 文本标准化配置
+normalization:
+  enabled: true
+
+  # 每个表的独立配置
+  # 可用 normalizer:
+  #   - html_normalizer: 移除HTML标签和解码HTML实体
+  #   - lowercase: 转换为小写
+  #   - whitespace_normalizer: 规范化空格（多个空格合并为一个）
+  #   - unicode_normalizer: Unicode规范化
+  #   - special_char_normalizer: 移除特殊字符
+  #   - regex_extract_normalizer: 正则提取（需配置 pattern, group 等）
+  #   - regex_replace_normalizer: 正则替换（需配置 rules）
+  # columns 支持两种格式:
+  #   1. 简单列名: [col1, col2]
+  #   2. 带规则: [{name: col1, pattern: ..., group: 1, rules: [...]}]
+  df_config:
+    users: []  # 用户数据无需标准化（用户表是从交互数据提取的）
+    items:
+      - normalizer: html_normalizer
+        columns:
+          - item_title
+          - item_description
+          - feature
+      - normalizer: lowercase
+        columns:
+          - item_title
+      - normalizer: whitespace_normalizer
+        columns:
+          - item_title
+      - normalizer: regex_extract_normalizer
+        columns:
+          - name: price
+            pattern: '(\$[\d,]+\.?\d*)'
+            group: 1
+            default: ''
+      - normalizer: regex_replace_normalizer
+        columns:
+          - name: brand
+            rules:
+              - pattern: "\\s+"
+                replacement: " "
+    interactions:
+      - normalizer: html_normalizer
+        columns:
+          - review_text
+      - normalizer: lowercase
+        columns:
+          - review_text
+      - normalizer: whitespace_normalizer
+        columns:
+          - review_text
+
+# 输出配置
+output:
+  dir: ./output/amazon23_video              # 输出目录
+  format: json               # 输出格式: json | parquet | csv
+  save_intermediate: false   # 是否保存 Adapter 输出的中间格式
+
+# Spark 配置
+spark:
+  master: local[*]           # Spark master URL
+  memory: 64g                 # driver 内存
+  driver_cores: 32            # driver CPU 核心数
+  executor_cores: 2          # executor CPU 核心数
+  executor_memory: 4g        # executor 内存
+  executor_numbers: 1        # executor 数量
+  partitions: 32              # shuffle 分区数
+  local_dir: /tmp  # shuffle 临时目录
+  checkpoint_dir: "/tmp/checkpoint"         # checkpoint 存储目录
