@@ -74,16 +74,13 @@ class EnrichmentPipeline:
         llm_client: LLMClient,
         output_dir: str | Path,
         prompt_template_path: str | Path | None = None,
+        constrain_to_dict: bool = True,
     ) -> None:
-        """Stage 1 orchestrator.
+        """Stage 1/2 orchestrator.
 
         Args:
-            tables_config_path: YAML config declaring tables/columns/data types
-                (preferred — see ``configs/tables.yaml``).
-            sql_path: Legacy alias for SQL DDL parsing. If provided, takes
-                precedence over ``tables_config_path`` and uses
-                ``sql_parser.parser.parse_sql``. Deprecated; will be removed
-                after all tests migrate.
+            constrain_to_dict: Stage 1 = False (LLM freely infers),
+                Stage 2 = True (dictionary-constrained).
         """
         if tables_config_path is None and sql_path is None:
             raise ValueError(
@@ -97,6 +94,7 @@ class EnrichmentPipeline:
         )
         self.sql_path = Path(sql_path) if sql_path else None
         self._use_legacy_sql = sql_path is not None
+        self._constrain_to_dict = constrain_to_dict
 
         self.hive = hive_reader
         self.llm = llm_client
@@ -123,6 +121,7 @@ class EnrichmentPipeline:
             llm_client=self.llm,
             dictionary=self.config.dim_dictionary,
             prompt_template=self.prompt_template,
+            constrain_to_dict=getattr(self, "_constrain_to_dict", True),
         )
 
         # Writers
@@ -205,7 +204,10 @@ class EnrichmentPipeline:
         # 3. Read + enrich
         all_items: list[ItemTags] = []
         for tm in core_tables:
-            sample_n = (self.config.pipeline.get("training_data_synonym") or {}).get("input") or {}
+            sample_n = (
+                (self.config.pipeline.get("training_data_synonym") or {})
+                .get("input") or {}
+            ).get("hive") or {}
             sample_n = sample_n.get("sample_n_per_type") or None
             spec = HiveReadSpec(
                 source="hive",

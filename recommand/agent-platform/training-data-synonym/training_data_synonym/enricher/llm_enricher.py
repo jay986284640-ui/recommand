@@ -33,20 +33,28 @@ def build_enrichment_prompt(
     prompt_template: str,
     *,
     name_hints: Optional[dict] = None,
+    include_candidates: bool = True,
 ) -> str:
     """Inject dictionary subsets + raw_record + optional name hints.
 
-    ``name_hints`` (v2.5) is the output of :func:`compute_name_hints` — keys
-    are dim names from :data:`ENRICHABLE_DIMS`, values are inferred strings.
-    They're rendered as a "提示:" block so the LLM sees the inferred values
-    alongside the raw record (better context than raw alone).
+    When ``include_candidates=False`` (Stage 1), the candidate dictionary
+    block is omitted so the LLM freely infers values from raw data.
+
+    ``name_hints`` are still included as a lightweight guidance block.
     """
-    dim_lines = []
-    for dim in ENRICHABLE_DIMS:
-        values = (dictionary.get(dim) or {}).get("values", []) or []
-        dim_lines.append(f"- {dim}: {values}")
-    dict_block = "\n".join(dim_lines)
     raw_json = json.dumps(raw_record, ensure_ascii=False, default=str)
+
+    dict_block = ""
+    if include_candidates:
+        dim_lines = []
+        for dim in ENRICHABLE_DIMS:
+            values = (dictionary.get(dim) or {}).get("values", []) or []
+            dim_lines.append(f"- {dim}: {values}")
+        dict_block = (
+            "\n\n候选字典(注入 5 维各自值,请严格从中选取):\n"
+            + "\n".join(dim_lines)
+            + "\n要求:严格 JSON,不写字典外值;不知道的字段填 null,不要编造。"
+        )
 
     hint_block = ""
     if name_hints:
@@ -54,13 +62,12 @@ def build_enrichment_prompt(
         if non_null:
             hint_json = json.dumps(non_null, ensure_ascii=False)
             hint_block = (
-                "\n\n提示(v2.5 名称推断,仅作参考;若与字段冲突以字段为准):\n"
-                + hint_json
+                "\n\n提示(从商品名称推断,仅作参考):\n" + hint_json
             )
     return (
         prompt_template
         .replace("{raw_record}", raw_json)
-        + "\n\n" + "候选字典(注入 6 维各自值):\n" + dict_block
+        + dict_block
         + hint_block
     )
 
@@ -88,7 +95,14 @@ def parse_enrichment_response(payload: dict) -> dict[str, Any]:
 
 
 class LLMEnricher:
-    """6-dim LLM fallback; failures → dict with `null` for the failing dim."""
+    """6-dim LLM fallback; failures → dict with `null` for the failing dim.
+
+    Args:
+        constrain_to_dict: If True (Stage 2), values not in dictionary are
+            silently rejected (dim → null). If False (Stage 1), all LLM
+            output passes through unfiltered, and the prompt omits the
+            candidate dictionary block so the LLM freely infers values.
+    """
 
     def __init__(
         self,
@@ -96,14 +110,13 @@ class LLMEnricher:
         dictionary: dict,
         prompt_template: str,
         brand_values: Optional[list[str]] = None,
+        *,
+        constrain_to_dict: bool = True,
     ) -> None:
-        """``brand_values`` defaults to ``dictionary['merchant']['values']``;
-        pass an explicit list when brand dictionary is separate (e.g. from
-        ``configs/brand_dictionary.yaml``).
-        """
         self._llm = llm_client
         self._dict = dictionary
         self._template = prompt_template
+        self._constrain = constrain_to_dict
         self._brand_values = (
             brand_values
             if brand_values is not None
@@ -119,24 +132,28 @@ class LLMEnricher:
     def enrich(self, raw_record: dict, *, item_id: str = "") -> dict[str, Any]:
         """Return {dim: value_or_None, ...}. None for failed dims.
 
-        v2.5 fallback: if LLM returns None for a dim AND ``compute_name_hints``
-        produced a non-empty value, use the inferred value. Tracked in
-        ``inferred_used_count`` + ``inferred_log``.
+        Stage 1 (constrain_to_dict=False): LLM freely infers values; no
+        dictionary candidates in prompt, no ``_constrain_to_dict`` pass.
+
+        Stage 2 (constrain_to_dict=True): prompt includes candidates,
+        ``_constrain_to_dict`` filters out-of-vocab values.
         """
         name_hints = compute_name_hints(
             raw_record, self._dict, self._brand_values
         )
         prompt = build_enrichment_prompt(
-            raw_record, self._dict, self._template, name_hints=name_hints
+            raw_record, self._dict, self._template,
+            name_hints=name_hints,
+            include_candidates=self._constrain,
         )
         try:
             resp = self._llm.complete(prompt, temperature=0.3, item_id=item_id)
             validate_complete_response(resp)
             parsed = parse_enrichment_response(resp)
-            # v2.5 fallback: apply name hints when LLM returned None
             self._apply_name_fallback(parsed, name_hints, item_id=item_id)
-            # Filter by dictionary candidate set
-            return self._constrain_to_dict(parsed, item_id=item_id)
+            if self._constrain:
+                return self._constrain_to_dict(parsed, item_id=item_id)
+            return {dim: parsed.get(dim) for dim in ENRICHABLE_DIMS}
         except (LLMTimeoutError, json.JSONDecodeError, ValidationError) as e:
             logger.warning(
                 "enrich_llm_failed",

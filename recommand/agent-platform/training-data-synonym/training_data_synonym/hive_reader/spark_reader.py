@@ -120,6 +120,10 @@ class SparkHiveReader(HiveReader):
             sql = f"SELECT {projection} FROM {full} WHERE {partition_filter}"
         else:
             sql = f"SELECT {projection} FROM {full}"
+
+        # sample_n_per_type: add LIMIT if set (null/None = read all)
+        if spec.sample_n_per_type:
+            sql += f" LIMIT {spec.sample_n_per_type}"
         try:
             df = spark.sql(sql)
         except Exception as e:

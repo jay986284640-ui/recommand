@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Optional
@@ -130,7 +131,7 @@ class MockLLMClient(LLMClient):
                 if block.startswith("{"):
                     raw = json.loads(block)
             elif "raw_record" in prompt:
-                block = prompt[prompt.index("raw_record"):]
+                block = prompt[prompt.index("raw_record") :]
                 # find first {...}
                 start = block.index("{")
                 end = block.index("}", start) + 1
@@ -179,14 +180,10 @@ class MockLLMClient(LLMClient):
             {"role": "assistant", "content": "可以告诉我具体想喝 / 想吃 / 价位吗?"},
         ]
         if n_turns >= 3:
-            messages.append(
-                {"role": "user", "content": f"{order_by or '随便'},想喝点东西"}
-            )
+            messages.append({"role": "user", "content": f"{order_by or '随便'},想喝点东西"})
             covered.append("consumable_type")
         if n_turns >= 4:
-            messages.append(
-                {"role": "assistant", "content": "好的,为您筛选以下门店..."}
-            )
+            messages.append({"role": "assistant", "content": "好的,为您筛选以下门店..."})
 
         return {"messages": messages, "covered_dims": covered}
 
@@ -234,6 +231,7 @@ def _extract_json(text: str) -> dict[str, Any]:
     """
     s = (text or "").strip()
     # Strip a leading ```json (or ```) fence
+    s = re.sub(r"<think>.*?</think>\n\n", "", s, flags=re.IGNORECASE | re.DOTALL)
     if s.startswith("```"):
         # drop opening fence line
         first_nl = s.find("\n")
@@ -241,7 +239,7 @@ def _extract_json(text: str) -> dict[str, Any]:
             s = s[first_nl + 1 :]
         # drop closing fence
         if s.endswith("```"):
-            s = s[: -3]
+            s = s[:-3]
         s = s.strip()
     data = json.loads(s)
     if not isinstance(data, dict):
@@ -304,8 +302,8 @@ class OpenAICompatClient(LLMClient):
                 base_url=self._base_url,
                 timeout=self._timeout_seconds,
                 headers=default_headers,
-                trust_env=True,               # 读取 http_proxy/https_proxy/no_proxy
-                verify=self._verify_ssl,       # SSL 证书校验(生产内网可关)
+                trust_env=True,  # 读取 http_proxy/https_proxy/no_proxy
+                verify=self._verify_ssl,  # SSL 证书校验(生产内网可关)
             )
         return self._client
 
@@ -343,9 +341,7 @@ class OpenAICompatClient(LLMClient):
             raise OpenAICompatValidationError(f"non-JSON body: {e}") from e
 
         if not isinstance(payload, dict):
-            raise OpenAICompatValidationError(
-                f"unexpected payload type: {type(payload).__name__}"
-            )
+            raise OpenAICompatValidationError(f"unexpected payload type: {type(payload).__name__}")
         return payload
 
     @retry(

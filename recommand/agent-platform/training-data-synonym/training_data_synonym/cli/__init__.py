@@ -198,6 +198,7 @@ def cmd_enrich(args) -> int:
         hive_reader=hive,
         llm_client=llm,
         output_dir=args.output_dir,
+        constrain_to_dict=getattr(args, "constrain_to_dict", True),
     )
     if tables_cfg and (tables_cfg != "configs/tables.yaml" or sql_path is None):
         pipeline_kwargs["tables_config_path"] = tables_cfg
@@ -313,6 +314,7 @@ def _extract_tags_impl(args) -> int:
         warehouse_dir=getattr(args, "warehouse_dir", None),
         spark_catalog=getattr(args, "spark_catalog", "spark_catalog"),
         dict_snapshot=None,
+        constrain_to_dict=False,   # Stage 1: 发散,不约束
     )
     rc_enrich = cmd_enrich(enrich_args)
 

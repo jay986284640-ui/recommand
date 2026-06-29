@@ -66,6 +66,8 @@ class PyHiveReader(HiveReader):
         projection = ", ".join(f"`{c}`" for c in columns)
         partition_filter = " OR ".join(f"etl_dt='{p}'" for p in partitions)
         sql = f"SELECT {projection} FROM {full} WHERE {partition_filter}"
+        if spec.sample_n_per_type:
+            sql += f" LIMIT {spec.sample_n_per_type}"
 
         conn = self._get_conn()
         with conn.cursor() as cur:
