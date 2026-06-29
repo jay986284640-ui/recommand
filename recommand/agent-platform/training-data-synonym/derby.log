@@ -1,0 +1,13 @@
+----------------------------------------------------------------
+Sat Jun 27 14:08:57 CST 2026:
+Booting Derby version The Apache Software Foundation - Apache Derby - 10.14.2.0 - (1828579): instance a816c00e-019f-07b2-0e72-000008430d40 
+on database directory /opt/recommand/recommand/agent-platform/training-data-synonym/metastore_db with class loader jdk.internal.loader.ClassLoaders$AppClassLoader@5c29bfd 
+Loaded from file:/home/jay/.local/lib/python3.13/site-packages/pyspark/jars/derby-10.14.2.0.jar
+java.vendor=Oracle Corporation
+java.runtime.version=11.0.2+9-LTS
+user.dir=/opt/recommand/recommand/agent-platform/training-data-synonym
+os.name=Linux
+os.arch=amd64
+os.version=6.6.87.2-microsoft-standard-WSL2
+derby.system.home=null
+Database Class Loader started - derby.database.classpath=''

@@ -21,7 +21,7 @@ def test_stage1_end_to_end(fixtures_dir: Path, repo_root: Path, tmp_output_dir: 
     llm = MockLLMClient(seed=42)
     pipeline = EnrichmentPipeline(
         config=cfg,
-        sql_path=repo_root.parent.parent / "tabale_structer.sql",
+        tables_config_path=repo_root / "configs" / "tables.yaml",
         hive_reader=hive,
         llm_client=llm,
         output_dir=tmp_output_dir,
@@ -30,8 +30,10 @@ def test_stage1_end_to_end(fixtures_dir: Path, repo_root: Path, tmp_output_dir: 
 
     # SC-001: 3 core tables must be found
     assert summary.sc_pass.get("SC-001") is True
-    # SC-002: dict_pass_rate = 1.0
+    # SC-002: dict_pass_rate = 1.0 (mock LLM emits in-vocab values)
     assert summary.dict_pass_rate == 1.0
+    # Part B: mock LLM is in-vocab → no rejections
+    assert summary.dict_rejected_count == 0
     # Output files exist
     assert (tmp_output_dir / "item_tags.jsonl").exists()
     assert (tmp_output_dir / "tables_meta.json").exists()
@@ -57,7 +59,7 @@ def test_incremental_skips_cached(tmp_output_dir: Path, fixtures_dir: Path, repo
     llm = MockLLMClient(seed=42)
     pipeline = EnrichmentPipeline(
         config=cfg,
-        sql_path=repo_root.parent.parent / "tabale_structer.sql",
+        tables_config_path=repo_root / "configs" / "tables.yaml",
         hive_reader=hive,
         llm_client=llm,
         output_dir=tmp_output_dir,
@@ -68,7 +70,7 @@ def test_incremental_skips_cached(tmp_output_dir: Path, fixtures_dir: Path, repo
     # Second run
     pipeline2 = EnrichmentPipeline(
         config=cfg,
-        sql_path=repo_root.parent.parent / "tabale_structer.sql",
+        tables_config_path=repo_root / "configs" / "tables.yaml",
         hive_reader=MockHiveReader(fixture_dir=fixtures_dir / "hive"),
         llm_client=MockLLMClient(seed=42),
         output_dir=tmp_output_dir,

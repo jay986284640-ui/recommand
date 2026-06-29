@@ -1,10 +1,37 @@
 # Implementation Plan: 训练数据生成 (兴业 O2O 三品类 SFT 语料)
 
-**Branch**: `training-data-synonym` | **Date**: 2026-06-23 | **Spec**: [./spec.md](./spec.md) (v2.5)
+**Branch**: `training-data-synonym` | **Date**: 2026-06-26 | **Spec**: [./spec.md](./spec.md) (v2.5.1)
 
 **Input**: Feature specification from `agent-platform/training-data-synonym/specs/spec.md`
 
-**Status**: Phase 1 设计完成;Stage 0 字典抽取 CLI(US4)已实现;Stage 1+2 MVP 已交付;Phase 5/6 待执行。
+**Status**: Phase 1 设计完成 + Stage 0/1/2/3 + split/verify + 真实 LLM + name_inference 已交付。
+   3-Stage Pipeline: `extract-tags` → `enrich` → `sft`。
+
+> **v2.5.2 变更(2026-06-27)**: 3-Stage Pipeline 架构。
+> - Stage 1 (`extract-tags`): 全量标签抽取 → dim_dictionary_snapshot.yaml
+> - Stage 2 (`enrich`): 实际标注数据,`--dict-snapshot` 约束,自动导出 snapshot
+> - Stage 3 (`sft`): 合成 SFT 数据
+
+> **v2.5.1 变更(2026-06-26)**:
+> - **字段契约**(`_meta.field_contract`):每种 role 声明 required 字段,loader 校验缺失抛
+>   `TablesConfigError`。修复"上游 SQL 缺字段代码静默失败"的隐患。
+> - **禁隐式 JOIN**:`extract_geo` 移除 `address_row` 参数;自拓展门店的 `Lng`/`Lat`
+>   由上游 SQL JOIN 或 fixture pre-join 提供。
+> - **名称 fallback 推断**(`enricher/name_inference.py`):`Brnd_Nm` / `Cat_Nm` 为空
+>   或为券规则文案时,从 `Str_Nm` / `shopName` / `couponName` 按字典值做最长子串匹配。
+>   规则文案(满50减10 / 代金券 等)命中即整体抑制该 item 推断。
+> - `LLMEnricher.inferred_used_count` + `ConsumableMapper.inferred_count` 可观测。
+> - 新增 fixture:`empty_brand.jsonl`(空 Brnd_Nm,触发 fallback)+ `rule_text_coupon.jsonl`
+>   (规则文案,验证抑制)。
+> - end-to-end demo coverage_avg 3.75 → 4.24。
+>
+> **v2.5 变更(2026-06-26)**:
+> - 表结构从 SQL 解析改为 `configs/tables.yaml` 显式声明(`common/tables_config.py::load_tables_config`)。
+> - 新增 `OpenAICompatClient`(httpx + `/chat/completions`),`pip install -e .[llm]` 可选依赖。
+> - 字典取值从静默 reject 升级为 **reject + 可观测**:`LLMEnricher.rejection_count`、`summary.dict_rejected_count`、
+>   `EnrichmentFailure(error="dict_rejection")` 写盘。
+> - `cmd_split` / `cmd_verify` / `cmd_all` 全部从 `NotImplementedError` 升级为完整实现;
+>   `scripts/demo.sh` 重写为新 CLI 4 段串联。
 
 ---
 

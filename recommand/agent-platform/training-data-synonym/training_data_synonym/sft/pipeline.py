@@ -315,6 +315,7 @@ class SFTPipeline:
             target_turns=target_turns,
             negative_type=negative_type,
             sentence_template=template,
+            item_id=item.item_id,
         )
         if covered_dims_override:
             covered = list(set(covered) | set(covered_dims_override))
@@ -330,7 +331,7 @@ class SFTPipeline:
             covered_dims=covered,
             forced_coverage=forced,
             generated_at=datetime.utcnow(),
-            llm_model="mock-llm",
+            llm_model=self.llm_generator.model_name,
         )
         ok, errs = validate_sft_sample(sample, self.config.dim_dictionary, max_turns=self.max_message_turns)
         if not ok:

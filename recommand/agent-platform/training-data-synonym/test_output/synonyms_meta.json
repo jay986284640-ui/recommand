@@ -1,0 +1,13 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-06-27T07:05:50.794887Z",
+  "source_profile": "test_output/item_profile.jsonl",
+  "total_groups": 62,
+  "stats": {
+    "rule_brand": 20,
+    "data_brand": 0,
+    "category": 12,
+    "occasion": 5,
+    "taste": 6
+  }
+}

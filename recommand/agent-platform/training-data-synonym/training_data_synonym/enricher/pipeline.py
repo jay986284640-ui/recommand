@@ -16,9 +16,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+import yaml
+
 from ..common.config import Config
 from ..common.llm_client import LLMClient
 from ..common.logging import get_logger
+from ..common.tables_config import (
+    TablesConfigError,
+    derive_sensitive_blocklist,
+    load_tables_config,
+)
 from ..data_model import (
     DIM_ORDER,
     HiveReadSpec,
@@ -28,13 +35,13 @@ from ..data_model import (
     TableMeta,
 )
 from ..hive_reader.base import HiveReader
-from ..sql_parser.parser import parse_sql
 from .consumable_mapper import ConsumableMapper
 from .distance_geo import extract_distance_tag
 from .failures import EnrichmentFailure, EnrichmentFailureWriter
 from .llm_enricher import LLMEnricher
 from .state import EnrichmentStateRow, EnrichmentStateStore, compute_raw_md5
 from .tag_schema import assemble_item_tags
+from .profile_writer import write_item_profile
 from .writer import ItemTagsWriter
 
 logger = get_logger(__name__)
@@ -50,6 +57,7 @@ class EnrichmentSummary:
     llm_failures: int = 0
     dict_pass_rate: float = 0.0
     coverage_avg: float = 0.0
+    dict_rejected_count: int = 0
     sc_pass: dict[str, bool] = field(default_factory=dict)
     started_at: str = field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
     finished_at: Optional[str] = None
@@ -59,15 +67,37 @@ class EnrichmentPipeline:
     def __init__(
         self,
         config: Config,
-        sql_path: str | Path,
+        *,
+        tables_config_path: str | Path | None = None,
+        sql_path: str | Path | None = None,
         hive_reader: HiveReader,
         llm_client: LLMClient,
         output_dir: str | Path,
-        *,
         prompt_template_path: str | Path | None = None,
     ) -> None:
+        """Stage 1 orchestrator.
+
+        Args:
+            tables_config_path: YAML config declaring tables/columns/data types
+                (preferred — see ``configs/tables.yaml``).
+            sql_path: Legacy alias for SQL DDL parsing. If provided, takes
+                precedence over ``tables_config_path`` and uses
+                ``sql_parser.parser.parse_sql``. Deprecated; will be removed
+                after all tests migrate.
+        """
+        if tables_config_path is None and sql_path is None:
+            raise ValueError(
+                "EnrichmentPipeline requires either tables_config_path= or sql_path="
+            )
+
         self.config = config
-        self.sql_path = Path(sql_path)
+        # Track both for diagnostic purposes; the loader chosen below.
+        self.tables_config_path = (
+            Path(tables_config_path) if tables_config_path else None
+        )
+        self.sql_path = Path(sql_path) if sql_path else None
+        self._use_legacy_sql = sql_path is not None
+
         self.hive = hive_reader
         self.llm = llm_client
         self.output_dir = Path(output_dir)
@@ -83,7 +113,11 @@ class EnrichmentPipeline:
 
         # Setup downstream services
         self.consumable_mapper = ConsumableMapper(
-            self.config.consumable_type_map, llm_client=self.llm
+            self.config.consumable_type_map,
+            llm_client=self.llm,
+            category_values=(
+                self.config.dim_dictionary.get("category") or {}
+            ).get("values", []) or [],
         )
         self.llm_enricher = LLMEnricher(
             llm_client=self.llm,
@@ -97,9 +131,52 @@ class EnrichmentPipeline:
         self.state = EnrichmentStateStore(self.output_dir / "tag_enrichment_state.jsonl")
         self.cold_start_path = self.output_dir / "cold_start_items.jsonl"
 
+        # Counters for Part B: dict-rejection observability.
+        # LLMEnricher / ConsumableMapper expose .rejection_count that grows
+        # monotonically across calls; we subtract the last-seen snapshot to
+        # compute per-item deltas.
+        self._last_llm_rej: int = 0
+        self._last_ct_rej: int = 0
+
+        # Sensitive blocklist: derived from tables.yaml sensitive flags so
+        # we no longer depend on a hard-coded list in data_model.py. For
+        # legacy --sql path, fall back to the hard-coded blocklist.
+        if self._use_legacy_sql:
+            self._sensitive_blocklist = [
+                "MASTERCARD_CUST_ID",
+                "Crt_Psn_Id",
+                "Updt_Psn_Id",
+                "Opr_Psn_Id",
+                "creator",
+                "updatePerson",
+            ]
+        else:
+            try:
+                raw_yaml = yaml.safe_load(
+                    self.tables_config_path.read_text(encoding="utf-8")
+                ) or {}
+            except FileNotFoundError as e:
+                raise TablesConfigError(
+                    f"tables config not found: {self.tables_config_path}"
+                ) from e
+            except (OSError, yaml.YAMLError) as e:
+                raise TablesConfigError(
+                    f"failed to load tables config {self.tables_config_path}: {e}"
+                ) from e
+            self._sensitive_blocklist = derive_sensitive_blocklist(
+                [], raw_yaml=raw_yaml
+            )
+
     def run(self) -> EnrichmentSummary:
-        # 1. Parse SQL
-        tables_meta = parse_sql(self.sql_path)
+        # 1. Load tables (YAML preferred; legacy SQL DDL parsing supported).
+        if self._use_legacy_sql:
+            from ..sql_parser.parser import parse_sql
+            tables_meta = parse_sql(self.sql_path)
+        else:
+            try:
+                tables_meta = load_tables_config(self.tables_config_path)
+            except TablesConfigError as e:
+                raise TablesConfigError(str(e)) from e
         tables_meta_path = self.output_dir / "tables_meta.json"
         tables_meta_path.write_text(
             json.dumps(
@@ -128,9 +205,12 @@ class EnrichmentPipeline:
         # 3. Read + enrich
         all_items: list[ItemTags] = []
         for tm in core_tables:
+            sample_n = (self.config.pipeline.get("training_data_synonym") or {}).get("input") or {}
+            sample_n = sample_n.get("sample_n_per_type") or None
             spec = HiveReadSpec(
                 source="hive",
-                sample_n_per_type=100,
+                sample_n_per_type=sample_n,
+                sensitive_columns_blocklist=list(self._sensitive_blocklist),
             )
             for raw_rec in self.hive.read(tm, spec):
                 self.summary.items_processed += 1
@@ -141,6 +221,7 @@ class EnrichmentPipeline:
 
         # 4. Persist
         n = self.writer.write(all_items)
+        n_profile = write_item_profile(all_items, self.output_dir / "item_profile.jsonl")
         self.state.flush()
         # Cold start
         from .cold_start import ColdStartWriter, is_cold_start
@@ -187,16 +268,41 @@ class EnrichmentPipeline:
         #    Will be set after we get category from llm_enricher
         sources["consumable_type"] = TagOrigin.MISSING  # temporary
 
-        # 3. 6-dim LLM enricher
+        # 3. 5-dim LLM enricher (avg_prc/distance 不走 LLM)
         enriched = self.llm_enricher.enrich(raw, item_id=raw_rec.item_id)
         self.summary.llm_calls += 1
-        # Apply validated values
-        for dim in ("category", "merchant", "avg_prc", "age", "occasion", "taste"):
+        for dim in ("category", "merchant", "age", "occasion", "taste"):
             v = enriched.get(dim)
             tags[dim] = v
             if v is not None:
-                # Determine source heuristically (LLM fallback path)
                 sources[dim] = TagOrigin.AI if self._is_ai_dim_source(dim, raw, v) else TagOrigin.RAW
+
+        # avg_prc: 仅从表字段桶化,不做 LLM 推断
+        avg_val = self._bucket_price(raw)
+        tags["avg_prc"] = avg_val
+        sources["avg_prc"] = TagOrigin.RAW if avg_val else TagOrigin.MISSING
+
+        # 3b. Part B: capture LLM-enricher dict rejections (per-item delta).
+        # llm_enricher.rejection_count is cumulative across all calls; the
+        # delta since the previous call tells us how many dims THIS item
+        # had silently dropped. We sum into summary.dict_rejected_count and
+        # write a single EnrichmentFailure row per item (aggregated details).
+        rej_total = self.llm_enricher.rejection_count
+        delta = max(0, rej_total - self._last_llm_rej)
+        self._last_llm_rej = rej_total
+        if delta > 0:
+            self.summary.dict_rejected_count += delta
+            self.failures.append(
+                EnrichmentFailure(
+                    item_id=raw_rec.item_id,
+                    raw_response=None,
+                    error="dict_rejection",
+                    error_detail=json.dumps(
+                        self.llm_enricher.rejection_log[-delta:],
+                        ensure_ascii=False,
+                    ),
+                )
+            )
 
         # 4. consumable_type mapping (uses category from above)
         ct_val, ct_src = self.consumable_mapper.map(
@@ -207,6 +313,14 @@ class EnrichmentPipeline:
         tags["consumable_type"] = ct_val
         sources["consumable_type"] = ct_src
 
+        # 4b. Part B: capture consumable_mapper rejections (logged but not
+        # double-recorded as failures; the warning was already emitted inside
+        # ConsumableMapper.map()).
+        ct_rej_total = self.consumable_mapper.rejection_count
+        ct_delta = max(0, ct_rej_total - self._last_ct_rej)
+        self._last_ct_rej = ct_rej_total
+        self.summary.dict_rejected_count += ct_delta
+
         # 5. assemble (enforces invariant)
         item = assemble_item_tags(
             item_id=raw_rec.item_id,
@@ -214,7 +328,7 @@ class EnrichmentPipeline:
             raw_record=raw,
             tags=tags,
             sources=sources,
-            llm_model="mock-llm",
+            llm_model=self.llm.model_name,
         )
 
         # 6. update state
@@ -225,11 +339,26 @@ class EnrichmentPipeline:
                 dict_version=self.config.dict_version,
                 source_partition=raw_rec.etl_dt,
                 enriched_at=item.enriched_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                llm_model="mock-llm",
+                llm_model=self.llm.model_name,
             )
         )
 
         return item
+
+    @staticmethod
+    def _bucket_price(raw: dict) -> Optional[str]:
+        """Bucket avg_prc from raw column values (no LLM)."""
+        try:
+            avg = float(raw.get("Avg_Prc") or raw.get("Mnt_Pern_Usr_Num") or raw.get("facePrice") or -1)
+        except (TypeError, ValueError):
+            return None
+        if avg <= 0:
+            return None
+        if avg <= 30:   return "0-30"
+        if avg <= 50:   return "30-50"
+        if avg <= 100:  return "50-100"
+        if avg <= 200:  return "100-200"
+        return "200+"
 
     def _is_ai_dim_source(self, dim: str, raw: dict, value) -> bool:
         """Heuristic: source = raw if the value is exactly the raw column;
@@ -269,7 +398,13 @@ class EnrichmentPipeline:
             )
             per_item_non_null.append(non_null)
         self.summary.coverage_avg = sum(per_item_non_null) / len(per_item_non_null)
-        self.summary.dict_pass_rate = 1.0  # enforced by llm_enricher._constrain_to_dict
+        # Part B: compute dict_pass_rate from observed rejections instead of
+        # hard-coding 1.0. SC-002 stays == 1.0 for the demo because mock LLM
+        # outputs are in-vocab; production should adjust the threshold.
+        total_calls = max(self.summary.llm_calls, 1)
+        self.summary.dict_pass_rate = round(
+            1.0 - (self.summary.dict_rejected_count / total_calls), 4
+        )
 
         # SC-001 (3 core tables present) is checked upstream in run()
         self.summary.sc_pass = {

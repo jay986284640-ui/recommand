@@ -24,11 +24,44 @@
 
 下游消费:`ItemTags` → `SFTSample` → 训练管线(`train.jsonl / val.jsonl / test.jsonl`)。
 
+> **v2.5.2 变更(2026-06-27)**: 3-Stage Pipeline。Stage 1 (extract-tags)→snapshot→Stage 2 (enrich)→item_tags→Stage 3 (sft)→sft_corpus。Snapshot YAML 作为 Stage 1→Stage 2→Stage 3 的字典约束桥梁。
+>
+> **v2.5.1 变更(2026-06-26)**:
+> - **字段契约**(`_meta.field_contract`):每种 role 声明 `required` / `optional` 字段;
+>   loader 在加载时校验缺失并抛 `TablesConfigError`。修复了"上游 SQL 缺字段代码静默失败"
+>   的隐患。
+> - **禁隐式 JOIN**:`hive_reader.base.extract_geo` 移除 `address_row` 参数,
+>   自拓展门店的 `Lng`/`Lat` 必须由上游 SQL 把 `o2o_new_gut_shop_address` JOIN 进来
+>   (或 fixture pre-join)。代码不主动做跨表查询。
+> - **名称 fallback 推断**(`enricher/name_inference.py`):当原始字段(`Brnd_Nm` /
+>   `Cat_Nm` / `productDesc`)为空或为券抢购规则文案(满50减10 / 代金券 / 限时抢购 /
+>   核销 / 优惠券)时,从商品名称(`Str_Nm` / `shopName` / `couponName`)按字典值做
+>   最长子串匹配,推断 brand / category / taste / occasion。
+> - 规则文案识别命中即**整体抑制**该 item 推断(避免误判)。
+> - `LLMEnricher` 把 hints 注入 prompt(LLM 看到)→ LLM 返回 None 时替换(双重保护);
+>   `ConsumableMapper` 当 `category=None` 时用 name 推断 category 再查 mapping。
+> - 新增可观测性:`LLMEnricher.inferred_used_count`、`ConsumableMapper.inferred_count`,
+>   `logger.info("name_hint_used", ...)` / `name_inferred_category` 结构化日志。
+> - 新增 fixture:`tests/fixtures/hive/empty_brand.jsonl`(空 Brnd_Nm,可触发 name fallback)
+>   + `tests/fixtures/hive/rule_text_coupon.jsonl`(规则文案,验证抑制逻辑)。
+> - end-to-end demo coverage_avg 从 3.75 提升到 4.24(brand/category 维度从空 → 推断补齐)。
+>
+> **v2.5 变更(2026-06-26)**:
+> - 实体 1 的输入从 `tabale_structer.sql` DDL 解析改为 `configs/tables.yaml` 显式声明。
+>   加载器:`training_data_synonym.common.tables_config.load_tables_config(path) → list[TableMeta]`。
+>   SQL 解析路径(`sql_parser.parser.parse_sql`)保留为 deprecated,新代码不再调用。
+> - `EnrichmentPipeline` / `extract-dictionary` 同时接受 `--tables-config`(新)和 `--sql`(legacy)两个 flag。
+> - `dim_dictionary.yaml` 中 merchant 取值从 19 扩展到 82;occasion 13;taste 14(新增 凉/微辣/通勤)。
+> - 新增可观测性字段:`EnrichmentSummary.dict_rejected_count`、`LLMEnricher.rejection_count`、
+>   `ConsumableMapper.rejection_count`;字典 reject 时写 `EnrichmentFailure(error="dict_rejection")`。
+
 ---
 
-## 实体 1:`TableMeta`(SQL 解析)
+## 实体 1:`TableMeta`(YAML 表配置,v2.5)
 
-`sql_parser` 解析 `tabale_structer.sql` DDL,每张表产出 1 个 `TableMeta`。
+`configs/tables.yaml` 显式声明 db / name / role / columns / type / sensitive flags,
+加载器 `common/tables_config.load_tables_config(path) -> list[TableMeta]` 产出与旧 SQL 解析
+完全相同的 `TableMeta` 数据类(下游零修改)。
 
 | 字段 | Python 类型 | JSON 类型 | 说明 |
 |------|------------|-----------|------|

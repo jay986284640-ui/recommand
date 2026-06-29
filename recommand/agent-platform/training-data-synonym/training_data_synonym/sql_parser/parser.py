@@ -1,5 +1,12 @@
 """SQL DDL parser — extracts TableMeta list from `tabale_structer.sql`.
 
+.. deprecated::
+    This module is deprecated as of v2.5. Use
+    :func:`training_data_synonym.common.tables_config.load_tables_config`
+    with ``configs/tables.yaml`` instead. SQL DDL parsing is brittle and
+    cannot capture intent (sensitive columns, role hints) that the new YAML
+    schema expresses explicitly. New code MUST NOT import ``parse_sql``.
+
 Per data-model.md §实体 1 + plan.md T014.
 Handles Hive DDL:
   CREATE TABLE [IF NOT EXISTS] db.table (
@@ -15,9 +22,18 @@ column-list terminator.
 from __future__ import annotations
 
 import re
+import warnings
 from pathlib import Path
 
 from ..data_model import ColumnMeta, Role, TableMeta
+
+warnings.warn(
+    "training_data_synonym.sql_parser is deprecated; "
+    "use training_data_synonym.common.tables_config.load_tables_config "
+    "with configs/tables.yaml.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 
 # Header: locate the start of "CREATE TABLE [IF NOT EXISTS] db.table ("

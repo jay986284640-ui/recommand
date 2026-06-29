@@ -1,0 +1,18 @@
+{
+  "items_processed": 300,
+  "items_enriched": 300,
+  "items_cold_start": 0,
+  "items_skipped_cached": 0,
+  "llm_calls": 300,
+  "llm_failures": 0,
+  "dict_pass_rate": 0.92,
+  "coverage_avg": 4.026666666666666,
+  "dict_rejected_count": 24,
+  "sc_pass": {
+    "SC-001": true,
+    "SC-002": false,
+    "SC-003": false
+  },
+  "started_at": "2026-06-27T06:51:50.326347Z",
+  "finished_at": "2026-06-27T06:57:18.577867Z"
+}

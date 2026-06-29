@@ -1,0 +1,289 @@
+_meta:
+  candidate_count: 52
+  existing_count: 0
+  added_count: 52
+  removed_count: 0
+  frequency_min: 1
+  levenshtein_threshold: 3
+  jaccard_threshold: 0.6
+  raw_count: 167
+  normalized_count: 55
+  filtered_count: 52
+added:
+- name: 自营品牌
+  frequency: 28
+  n_variants: 1
+  sample_aliases:
+  - 自营品牌
+- name: 味多美30元代金券
+  frequency: 15
+  n_variants: 4
+  sample_aliases:
+  - 味多美10元代金券
+  - 味多美20元代金券
+  - 味多美30元代金券
+  - 味多美50元代金券
+- name: 海底捞
+  frequency: 12
+  n_variants: 1
+  sample_aliases:
+  - 海底捞
+- name: 必胜客
+  frequency: 12
+  n_variants: 1
+  sample_aliases:
+  - 必胜客
+- name: 海底捞10元代金券
+  frequency: 11
+  n_variants: 5
+  sample_aliases:
+  - 海底捞100元代金券
+  - 海底捞10元代金券
+  - 海底捞20元代金券
+  - 海底捞30元代金券
+  - 海底捞50元代金券
+- name: 味多美
+  frequency: 10
+  n_variants: 1
+  sample_aliases:
+  - 味多美
+- name: 通用10元代金券
+  frequency: 7
+  n_variants: 2
+  sample_aliases:
+  - 通用100元代金券
+  - 通用10元代金券
+- name: 通用30元代金券
+  frequency: 7
+  n_variants: 1
+  sample_aliases:
+  - 通用30元代金券
+- name: 通用50元代金券
+  frequency: 6
+  n_variants: 1
+  sample_aliases:
+  - 通用50元代金券
+- name: 永和大王
+  frequency: 5
+  n_variants: 1
+  sample_aliases:
+  - 永和大王
+- name: 好利来
+  frequency: 5
+  n_variants: 1
+  sample_aliases:
+  - 好利来
+- name: 一点点30元代金券
+  frequency: 4
+  n_variants: 2
+  sample_aliases:
+  - 一点点30元代金券
+  - 一点点50元代金券
+- name: 瑞幸
+  frequency: 4
+  n_variants: 1
+  sample_aliases:
+  - 瑞幸
+- name: 奈雪
+  frequency: 4
+  n_variants: 1
+  sample_aliases:
+  - 奈雪
+- name: 罗森
+  frequency: 3
+  n_variants: 1
+  sample_aliases:
+  - 罗森
+- name: 通用20元代金券
+  frequency: 3
+  n_variants: 1
+  sample_aliases:
+  - 通用20元代金券
+- name: 全家10元代金券
+  frequency: 3
+  n_variants: 1
+  sample_aliases:
+  - 全家10元代金券
+- name: 肯德基20元代金券
+  frequency: 3
+  n_variants: 2
+  sample_aliases:
+  - 肯德基10元代金券
+  - 肯德基20元代金券
+- name: 罗森100元代金券
+  frequency: 3
+  n_variants: 1
+  sample_aliases:
+  - 罗森100元代金券
+- name: 真功夫10元代金券
+  frequency: 3
+  n_variants: 3
+  sample_aliases:
+  - 真功夫10元代金券
+  - 真功夫20元代金券
+  - 真功夫30元代金券
+- name: 味多美100元代金券
+  frequency: 3
+  n_variants: 1
+  sample_aliases:
+  - 味多美100元代金券
+- name: Costa
+  frequency: 3
+  n_variants: 1
+  sample_aliases:
+  - Costa
+- name: 必胜客10元代金券
+  frequency: 3
+  n_variants: 3
+  sample_aliases:
+  - 必胜客10元代金券
+  - 必胜客30元代金券
+  - 必胜客50元代金券
+- name: 喜茶
+  frequency: 2
+  n_variants: 1
+  sample_aliases:
+  - 喜茶
+- name: 汉堡王10元代金券
+  frequency: 2
+  n_variants: 2
+  sample_aliases:
+  - 汉堡王10元代金券
+  - 汉堡王20元代金券
+- name: 永和大王100元代金券
+  frequency: 2
+  n_variants: 1
+  sample_aliases:
+  - 永和大王100元代金券
+- name: 奈雪10元代金券
+  frequency: 2
+  n_variants: 1
+  sample_aliases:
+  - 奈雪10元代金券
+- name: 星巴克
+  frequency: 2
+  n_variants: 1
+  sample_aliases:
+  - 星巴克
+- name: 全家
+  frequency: 2
+  n_variants: 1
+  sample_aliases:
+  - 全家
+- name: 瑞幸20元代金券
+  frequency: 2
+  n_variants: 1
+  sample_aliases:
+  - 瑞幸20元代金券
+- name: 全家50元代金券
+  frequency: 2
+  n_variants: 1
+  sample_aliases:
+  - 全家50元代金券
+- name: 肯德基
+  frequency: 2
+  n_variants: 1
+  sample_aliases:
+  - 肯德基
+- name: 真功夫
+  frequency: 2
+  n_variants: 1
+  sample_aliases:
+  - 真功夫
+- name: 奈雪50元代金券
+  frequency: 2
+  n_variants: 1
+  sample_aliases:
+  - 奈雪50元代金券
+- name: 喜茶50元代金券
+  frequency: 2
+  n_variants: 1
+  sample_aliases:
+  - 喜茶50元代金券
+- name: 麦当劳100元代金券
+  frequency: 2
+  n_variants: 1
+  sample_aliases:
+  - 麦当劳100元代金券
+- name: 罗森20元代金券
+  frequency: 2
+  n_variants: 1
+  sample_aliases:
+  - 罗森20元代金券
+- name: 巴黎贝甜100元代金券
+  frequency: 1
+  n_variants: 1
+  sample_aliases:
+  - 巴黎贝甜100元代金券
+- name: 蜜雪冰城50元代金券
+  frequency: 1
+  n_variants: 1
+  sample_aliases:
+  - 蜜雪冰城50元代金券
+- name: 蜜雪冰城100元代金券
+  frequency: 1
+  n_variants: 1
+  sample_aliases:
+  - 蜜雪冰城100元代金券
+- name: 7_Eleven
+  frequency: 1
+  n_variants: 1
+  sample_aliases:
+  - 7_Eleven
+- name: 7_Eleven10元代金券
+  frequency: 1
+  n_variants: 1
+  sample_aliases:
+  - 7_Eleven10元代金券
+- name: 一点点
+  frequency: 1
+  n_variants: 1
+  sample_aliases:
+  - 一点点
+- name: 好利来100元代金券
+  frequency: 1
+  n_variants: 1
+  sample_aliases:
+  - 好利来100元代金券
+- name: 麦当劳50元代金券
+  frequency: 1
+  n_variants: 1
+  sample_aliases:
+  - 麦当劳50元代金券
+- name: 瑞幸10元代金券
+  frequency: 1
+  n_variants: 1
+  sample_aliases:
+  - 瑞幸10元代金券
+- name: 巴黎贝甜20元代金券
+  frequency: 1
+  n_variants: 1
+  sample_aliases:
+  - 巴黎贝甜20元代金券
+- name: 巴黎贝甜
+  frequency: 1
+  n_variants: 1
+  sample_aliases:
+  - 巴黎贝甜
+- name: 肯德基100元代金券
+  frequency: 1
+  n_variants: 1
+  sample_aliases:
+  - 肯德基100元代金券
+- name: 罗森50元代金券
+  frequency: 1
+  n_variants: 1
+  sample_aliases:
+  - 罗森50元代金券
+- name: 蜜雪冰城
+  frequency: 1
+  n_variants: 1
+  sample_aliases:
+  - 蜜雪冰城
+- name: 星巴克50元代金券
+  frequency: 1
+  n_variants: 1
+  sample_aliases:
+  - 星巴克50元代金券
+existing: []
+removed: []

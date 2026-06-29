@@ -18,7 +18,7 @@ def sft_path(repo_root: Path, tmp_output_dir: Path) -> Path:
     r1 = subprocess.run(
         [
             "python", "-m", "training_data_synonym.cli", "enrich",
-            "--sql", str(repo_root.parent.parent / "tabale_structer.sql"),
+            "--tables-config", str(repo_root / "configs" / "tables.yaml"),
             "--source", "mock",
             "--fixture-dir", str(repo_root / "tests/fixtures/hive"),
             "--output-dir", str(tmp_output_dir),

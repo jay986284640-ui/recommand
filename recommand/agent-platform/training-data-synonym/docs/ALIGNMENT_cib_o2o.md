@@ -1,8 +1,8 @@
 # 业务对齐说明:002/003 Spec ↔ 兴业银行 O2O 真实表结构
 
-**Date**: 2026-06-22
+**Date**: 2026-06-26 (v2.5.1:field_contract + name_inference + 禁隐式 JOIN)
 **Spec 源**: `specs/002-training-data-generator/`, `specs/003-synonym-dictionary/`
-**业务源**: `tabale_structer.sql`(737 行,7 张业务表 + 1 张埋点表)
+**业务源**: `tabale_structer.sql`(737 行,7 张业务表 + 1 张埋点表)— **v2.5 起仅作 schema 参考,运行时通过 `configs/tables.yaml` 声明**
 
 ---
 
@@ -103,10 +103,11 @@ dims:
 
 ---
 
-## 4. 数据流(对齐真实业务)
+## 4. 数据流(对齐真实业务,v2.5)
 
 ```
-                     tabale_structer.sql (7 张业务表)
+                  configs/tables.yaml (v2.5 — 取代 SQL 解析)
+                  db / name / role / columns / type / sensitive
                               │
             ┌─────────────────┼─────────────────┐
             ↓                 ↓                 ↓
@@ -116,24 +117,47 @@ dims:
             │                 │                 │
             └─────────────────┼─────────────────┘
                               ↓
-                  ┌───────────────────────┐
-                  │ scripts/sql_parser.py │
-                  │ (本目录,新)            │
-                  └───────────┬───────────┘
-                              ↓
-                  tables: Dict[str, TableMeta]
-                  (内存结构,供后续脚本消费)
+              ┌───────────────────────────────────┐
+              │ training_data_synonym/           │
+              │   common/tables_config.py        │
+              │   load_tables_config(yaml)       │
+              │   → list[TableMeta]              │
+              │   (校验 + sensitive 自动派生)     │
+              └───────────────┬───────────────────┘
                               ↓
               ┌───────────────┴───────────────┐
               ↓                               ↓
     ┌──────────────────────┐      ┌──────────────────────┐
-    │ generate_synonyms.py │      │ generate_training_   │
-    │ (3 源 → Solr)        │      │ data.py              │
-    │                      │      │ (LLM mock → 7 维      │
-    │ synonyms_solr.txt    │      │  校验 → 清洗 → 划分)   │
-    │ synonyms_stats.json  │      │ train/val/test.jsonl  │
-    └──────────────────────┘      └──────────────────────┘
+    │ cli extract-dict.    │      │ cli enrich           │
+    │ (Stage 0,扩量)       │      │ (Stage 1,补全标签)   │
+    │ brand/category diff  │      │ item_tags.jsonl      │
+    └──────────────────────┘      └──────────┬───────────┘
+                                            ↓
+                                ┌──────────────────────┐
+                                │ cli sft → split →    │
+                                │ verify               │
+                                │ (Stage 2 + split +   │
+                                │  SC verify)          │
+                                └──────────────────────┘
 ```
+
+> **v2.5.1 变更**(2026-06-26):
+> - **字段契约(`_meta.field_contract`)**:每种 role 声明 required/optional 字段,
+>   loader 加载时校验。修复了"上游 SQL 缺字段代码静默失败"的隐患。
+> - **禁隐式 JOIN**:`extract_geo` 不再接受 `address_row` 参数。
+>   自拓展门店的 `Lng`/`Lat` 必须由上游 SQL 把 `o2o_new_gut_shop_address` JOIN 进来
+>   (或 fixture pre-join);代码不主动做跨表查询。
+> - **名称 fallback 推断**(`name_inference.py`):当 `Brnd_Nm` / `Cat_Nm` / `productDesc`
+>   为空或为券抢购规则文案(满50减10 / 代金券 / 限时抢购),从商品名称(`Str_Nm` /
+>   `shopName` / `couponName`)按字典值做最长子串匹配,推断 brand / category / taste /
+>   occasion;规则文案识别命中即整体抑制该 item 推断(避免误判)。
+> - **可观测**:新增 `LLMEnricher.inferred_used_count` / `ConsumableMapper.inferred_count`
+>   + `logger.info("name_hint_used", ...)` 结构化日志;end-to-end demo 覆盖率
+>   coverage_avg 从 3.75 提升到 4.24(品牌/分类维度从空 → 推断补齐)。
+>
+> **v2.5 变更**(基线):旧版用 `scripts/sql_parser.py` 正则解析 `tabale_structer.sql` 推断 schema,
+> 已被 `common/tables_config.load_tables_config(yaml)` 取代。新增可观测性:
+> 字典 reject 计数 / 失败盘 / T097 日志;新增真实 LLM 客户端(`OpenAICompatClient`)。
 
 ---
 
@@ -151,14 +175,16 @@ dims:
 | 文件 | 用途 |
 |------|------|
 | `docs/ALIGNMENT_cib_o2o.md` | 本文档 |
-| `scripts/sql_parser.py` | 解析 `tabale_structer.sql` → `tables` dict |
-| `scripts/mock_llm_client.py` | 本地启发式 mock-llm,无网络 |
-| `scripts/dim_dictionary.yaml` | 7 维商业属性字典 |
-| `scripts/brand_dictionary.yaml` | 60+ 连锁品牌(从 o2o 品类扩量) |
-| `scripts/category_dictionary.yaml` | 50+ 品类别名(中英) |
-| `scripts/generate_training_data.py` | 主脚本:门店 → 训练数据 |
-| `scripts/generate_synonyms.py` | 主脚本:门店 → 同义词词表 |
-| `scripts/cleaner.py` | 7 类清洗规则(供训练数据生成调用) |
-| `scripts/splitter.py` | 按 item_id hash 划分 80/10/10 |
-| `scripts/demo.sh` | 一键 demo(10 门店,~1 min) |
-| `README.md` | 入口文档 |
+| `configs/tables.yaml` | **v2.5 新** — 表结构声明(取代 sql_parser) |
+| `training_data_synonym/common/tables_config.py` | **v2.5 新** — YAML 加载器 |
+| `training_data_synonym/common/llm_client.py` | MockLLMClient + OpenAICompatClient (v2.5) |
+| `scripts/sql_parser.py` | 旧版 regex 解析,保留兼容不再被 demo 调用 |
+| `scripts/mock_llm_client.py` | 旧版 heuristic mock,保留参考 |
+| `configs/dim_dictionary.yaml` | 8 维商业属性字典(merchant 82 / occasion 13 / taste 14) |
+| `configs/brand_dictionary.yaml` | 60+ 连锁品牌 canonical + 变体 |
+| `configs/consumable_type_map.yaml` | category → 吃/喝 映射 |
+| `configs/intent_keywords.yaml` | 5 类 intent 关键词 |
+| `configs/sentence_templates.yaml` | 句式骨架 |
+| `configs/pipeline.yaml` | 顶层配置(provider / ratios / paths) |
+| `scripts/demo.sh` | **v2.5 更新** — 一键 demo(走新 CLI 4 段) |
+| `README.md` | 入口文档(v2.5 含 YAML / 真实 LLM / 可观测性说明) |

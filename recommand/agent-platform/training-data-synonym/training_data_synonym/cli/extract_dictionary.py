@@ -30,7 +30,6 @@ import yaml
 from ..common.logging import configure_logging, get_logger
 from ..data_model import HiveReadSpec, Role, TableMeta
 from ..hive_reader.base import HiveReader
-from ..sql_parser.parser import parse_sql
 
 logger = get_logger(__name__)
 
@@ -376,13 +375,16 @@ def extract(
     *,
     source: str = "mock",
     fixture_dir: str = "tests/fixtures/hive",
-    sql_path: str = "/opt/recommand/recommand/tabale_structer.sql",
+    tables_config_path: str | None = None,
+    sql_path: str | None = None,
     output_dir: str = "dict_candidates",
     configs_dir: str = "configs",
     frequency_min: int = 10,
     levenshtein_threshold: int = 3,
     jaccard_threshold: float = 0.6,
     sample_n_per_type: int | None = None,
+    hive_metastore_uri: str | None = None,
+    warehouse_dir: str | None = None,
 ) -> dict:
     """Run Stage 0 → 3 and write candidate files under output_dir.
 
@@ -398,11 +400,19 @@ def extract(
         reader: HiveReader = MockHiveReader(fixture_dir=fixture_dir)
     elif source == "hive":
         from ..hive_reader.spark_reader import SparkHiveReader
-        reader = SparkHiveReader()  # env-wired in production
+        reader = SparkHiveReader(
+            hive_metastore_uri=hive_metastore_uri,
+            warehouse_dir=warehouse_dir,
+        )
     else:
         raise ValueError(f"unknown source: {source}")
 
-    sql_tables = parse_sql(sql_path)
+    if sql_path:
+        from ..sql_parser.parser import parse_sql
+        sql_tables = parse_sql(sql_path)
+    else:
+        from ..common.tables_config import load_tables_config
+        sql_tables = load_tables_config(tables_config_path)
     spec = HiveReadSpec(source=source, sample_n_per_type=sample_n_per_type)
 
     # Brands
@@ -508,7 +518,18 @@ def extract(
 @click.command()
 @click.option("--source", default="mock", help="hive | mock")
 @click.option("--fixture-dir", default="tests/fixtures/hive", help="mock fixture dir")
-@click.option("--sql", default="/opt/recommand/recommand/tabale_structer.sql")
+@click.option(
+    "--tables-config",
+    "tables_config_path",
+    default=None,
+    help="YAML declaring tables/columns (replaces --sql)",
+)
+@click.option(
+    "--sql",
+    "sql_path",
+    default=None,
+    help="(deprecated) SQL DDL file (use --tables-config instead)",
+)
 @click.option("--output-dir", default="dict_candidates")
 @click.option("--configs-dir", default="configs")
 @click.option("--frequency-min", default=10, type=int, help="min occurrences to include")
@@ -523,10 +544,19 @@ def main(
 ):
     """Stage 0 dictionary candidate extraction (offline CLI)."""
     configure_logging(log_level)
+    if tables_config_path and tables_config_path != "configs/tables.yaml":
+        kw = "tables_config_path"
+        val = tables_config_path
+    elif sql_path:
+        kw = "sql_path"
+        val = sql_path
+    else:
+        kw = "tables_config_path"
+        val = "configs/tables.yaml"
     stats = extract(
         source=source,
         fixture_dir=fixture_dir,
-        sql_path=sql,
+        **{kw: val},
         output_dir=output_dir,
         configs_dir=configs_dir,
         frequency_min=frequency_min,

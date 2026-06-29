@@ -16,9 +16,9 @@ from pathlib import Path
 import pytest
 
 from training_data_synonym.common.exceptions import SensitiveLeakError
+from training_data_synonym.common.tables_config import load_tables_config
 from training_data_synonym.data_model import HiveReadSpec, Role
 from training_data_synonym.hive_reader.mock_reader import MockHiveReader
-from training_data_synonym.sql_parser.parser import parse_sql
 
 SENSITIVE = ["MASTERCARD_CUST_ID", "Crt_Psn_Id", "Updt_Psn_Id", "Opr_Psn_Id", "creator", "updatePerson"]
 
@@ -29,8 +29,8 @@ def reader(fixtures_dir: Path) -> MockHiveReader:
 
 
 @pytest.fixture
-def sql_tables():
-    return parse_sql("/opt/recommand/recommand/tabale_structer.sql")
+def sql_tables(repo_root: Path):
+    return load_tables_config(repo_root / "configs" / "tables.yaml")
 
 
 def test_three_core_tables(sql_tables):

@@ -57,10 +57,21 @@ class MockHiveReader(HiveReader):
         if spec.sample_n_per_type is not None:
             records = records[: spec.sample_n_per_type]
 
+        # Build a case-insensitive index of sensitive column names so the
+        # blocklist matches regardless of whether fixtures use
+        # `Crt_Psn_Id` (PascalCase from real SQL DDL) or `crt_psn_id`
+        # (snake_case from tables.yaml).
+        sensitive_lower = {c.lower() for c in spec.sensitive_columns_blocklist}
+
         for raw in records:
-            # 1. sensitive column drop
-            for col in spec.sensitive_columns_blocklist:
-                raw.pop(col, None)
+            # Normalize keys to lowercase so Spark (returns lowercase) and
+            # mock (fixtures are PascalCase) behave the same downstream.
+            raw = {k.lower(): v for k, v in raw.items()}
+
+            # 1. sensitive column drop (case-insensitive)
+            for key in list(raw.keys()):
+                if key.lower() in sensitive_lower:
+                    raw.pop(key, None)
 
             # 2. item_id synthesis
             item_id = synthesize_item_id(table_meta, raw)
@@ -72,10 +83,10 @@ class MockHiveReader(HiveReader):
             etl_dt = raw.pop("etl_dt", "20260620") or "20260620"
 
             # Sanity: sensitive column must not appear in raw
-            for col in spec.sensitive_columns_blocklist:
-                if col in raw:
+            for key in raw:
+                if key.lower() in sensitive_lower:
                     raise SensitiveLeakError(
-                        f"sensitive column '{col}' survived MockHiveReader.read()"
+                        f"sensitive column '{key}' survived MockHiveReader.read()"
                     )
 
             yield RawRecord(

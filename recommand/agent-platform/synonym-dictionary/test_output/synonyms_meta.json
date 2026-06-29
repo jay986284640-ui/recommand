@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "generated_at": "2026-06-27T07:20:41.785419Z",
+  "total_groups_written": 44,
+  "total_groups_assembled": 63,
+  "stats": {
+    "brand_rule": 21,
+    "brand_data": 0,
+    "category_rule": 12,
+    "category_fallback": 0,
+    "occasion": 5,
+    "taste": 6
+  }
+}

@@ -26,10 +26,27 @@ logger = get_logger(__name__)
 
 
 class SparkHiveReader(HiveReader):
-    """PySpark Hive Catalog reader. Lazy SparkSession — created on first .read() call."""
+    """PySpark Hive Catalog reader. Lazy SparkSession — created on first .read() call.
 
-    def __init__(self, catalog: str = "spark_catalog", spark_session=None) -> None:
+    Args:
+        catalog: Spark catalog name (default ``spark_catalog``).
+        hive_metastore_uri: Thrift URI of the Hive metastore
+            (e.g. ``thrift://localhost:9083``). When set, injected as
+            ``spark.hadoop.hive.metastore.uris`` at session creation.
+        warehouse_dir: Spark warehouse directory (``spark.sql.warehouse.dir``).
+        spark_session: pre-built session for testing / DI.
+    """
+
+    def __init__(
+        self,
+        catalog: str = "spark_catalog",
+        hive_metastore_uri: str | None = None,
+        warehouse_dir: str | None = None,
+        spark_session=None,
+    ) -> None:
         self._catalog = catalog
+        self._metastore_uri = hive_metastore_uri
+        self._warehouse_dir = warehouse_dir
         self._spark = spark_session  # allow injection for tests
         self._spark_initialized = spark_session is not None
 
@@ -42,11 +59,22 @@ class SparkHiveReader(HiveReader):
                     "pyspark not installed; install with `pip install pyspark`"
                 ) from e
             try:
-                self._spark = (
+                builder = (
                     SparkSession.builder.appName("training-data-synonym")
                     .enableHiveSupport()
-                    .getOrCreate()
                 )
+                if self._metastore_uri:
+                    builder = builder.config(
+                        "hive.metastore.uris", self._metastore_uri
+                    )
+                if self._warehouse_dir:
+                    builder = builder.config(
+                        "spark.sql.warehouse.dir", self._warehouse_dir
+                    )
+                builder = builder.config(
+                    "hive.exec.dynamic.partition.mode", "nonstrict"
+                )
+                self._spark = builder.getOrCreate()
             except Exception as e:  # noqa: BLE001
                 raise ConnectionError_(f"SparkSession init failed: {e}") from e
             self._spark_initialized = True
@@ -55,10 +83,17 @@ class SparkHiveReader(HiveReader):
     def list_partitions(self, table_meta: TableMeta) -> list[str]:
         spark = self._get_spark()
         full = f"{self._catalog}.{table_meta.db}.{table_meta.table_name}"
+        # If partition_keys is empty, the table is non-partitioned → single
+        # synthetic partition so read() still works.
+        if not table_meta.partition_keys:
+            return [""]  # empty string → WHERE clause becomes "WHERE 1=1" effectively
         try:
             df = spark.sql(f"SHOW PARTITIONS {full}")
         except Exception as e:
-            if "AccessControlException" in str(e) or "permission" in str(e).lower():
+            msg = str(e)
+            if "is not partitioned" in msg.lower() or "partition_schema_is_empty" in msg.lower():
+                return [""]
+            if "AccessControlException" in msg or "permission" in msg.lower():
                 raise AccessDenied(f"SHOW PARTITIONS denied for {full}") from e
             raise ConnectionError_(f"SHOW PARTITIONS failed for {full}: {e}") from e
         rows = df.collect()
@@ -70,7 +105,7 @@ class SparkHiveReader(HiveReader):
         spark = self._get_spark()
         full = f"{self._catalog}.{table_meta.db}.{table_meta.table_name}"
         partitions = self._select_partitions(table_meta, spec)
-        if not partitions:
+        if partitions is None:
             raise EmptyPartitionSet(f"No partitions for {full}")
 
         # Project all declared columns minus sensitive blocklist
@@ -78,8 +113,13 @@ class SparkHiveReader(HiveReader):
                    if c.name not in spec.sensitive_columns_blocklist]
         projection = ", ".join(f"`{c}`" for c in columns)
 
-        partition_filter = " OR ".join(f"etl_dt='{p}'" for p in partitions)
-        sql = f"SELECT {projection} FROM {full} WHERE {partition_filter}"
+        # Build SQL: non-partitioned tables skip the WHERE clause
+        if partitions and partitions != [""]:
+            pk = table_meta.partition_keys[0] if table_meta.partition_keys else "etl_dt"
+            partition_filter = " OR ".join(f"`{pk}`='{p}'" for p in partitions)
+            sql = f"SELECT {projection} FROM {full} WHERE {partition_filter}"
+        else:
+            sql = f"SELECT {projection} FROM {full}"
         try:
             df = spark.sql(sql)
         except Exception as e:
@@ -98,7 +138,7 @@ class SparkHiveReader(HiveReader):
                     )
             item_id = synthesize_item_id(table_meta, raw)
             shop_lng, shop_lat = extract_geo(table_meta, raw)
-            etl_dt = raw.pop("etl_dt", partitions[0]) or partitions[0]
+            etl_dt = raw.pop("etl_dt", (partitions[0] if partitions else "")) or (partitions[0] if partitions else "") or "20260620"
             yield RawRecord(
                 item_id=item_id,
                 item_type=table_meta.inferred_role,

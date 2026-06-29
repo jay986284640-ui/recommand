@@ -1,0 +1,167 @@
+_meta:
+  version: 2.5-stage1-snapshot
+  source: /opt/recommand/recommand/agent-platform/training-data-synonym/test_output/item_tags.jsonl
+  items: 300
+  merged_with: configs/dim_dictionary.yaml
+category:
+  desc: 品类(从 o2o Cat_Nm 抽取,覆盖 12 类)
+  op: in
+  values:
+  - 咖啡
+  - 快餐
+  - 奶茶
+  - 烘焙
+  - 便利店
+  - 中餐
+  - 西餐
+  - 日料
+  - 火锅
+  - 烧烤
+  - 甜品
+  - 水果
+consumable_type:
+  desc: 吃 / 喝二分(由 category 映射,见 consumable_type_map.yaml)
+  op: eq
+  values:
+  - drink
+  - food
+  - mixed
+  - none
+merchant:
+  desc: 品牌(从 o2o Brnd_Nm 抽取 + brand_dictionary.yaml 补全)
+  op: in
+  values:
+  - 必胜客
+  - 味多美
+  - 海底捞
+  - 永和大王
+  - 奈雪
+  - Costa
+  - 喜茶
+  - 瑞幸
+  - 好利来
+  - 星巴克
+  - 一点点
+  - 罗森
+  - 全家
+  - 巴黎贝甜
+  - 真功夫
+  - 7_Eleven
+  - 肯德基
+  - 麦当劳
+  - 汉堡
+  - 蜜雪冰城
+  - Tim_Hortons
+  - Dunkin
+  - McCafe
+  - Blue_Bottle
+  - Peets
+  - CoCo
+  - 快乐柠檬
+  - 茶百道
+  - 古茗
+  - 书亦烧仙草
+  - 益禾堂
+  - 沪上阿姨
+  - Burger_King
+  - Subway
+  - Domino
+  - Taco_Bell
+  - Wendys
+  - Popeyes
+  - Five_Guys
+  - Chick_fil_A
+  - 85度C
+  - 多乐之日
+  - 克莉丝汀
+  - 面包新语
+  - 幸福西饼
+  - 便利蜂
+  - 邻几
+  - 十足
+  - 呷哺呷哺
+  - 味千拉面
+  - 吉野家
+  - 大米先生
+  - 乡村基
+  - 拿铁
+  - 美式
+  - 卡布奇诺
+  - 摩卡
+  - 焦糖玛奇朵
+  - 浓缩咖啡
+  - 波霸
+  - 芋圆
+  - 奶盖
+  - 水果茶
+  - 披萨
+  - 薯条
+  - 鸡翅
+  - 炸鸡
+  - 火锅
+  - 烧烤
+  - 麻辣烫
+  - 兰州拉面
+  - 黄焖鸡
+  - 沙县小吃
+avg_prc:
+  desc: 人均价格区间(从 o2o Avg_Prc / coupon.facePrice 桶化)
+  op: in
+  values:
+  - 0-30
+  - 30-50
+  - 50-100
+  - 100-200
+  - 200+
+distance:
+  desc: 用户到门店距离桶(SFT 阶段字典直采,不读 lng/lat)
+  op: in
+  values:
+  - 0-500
+  - 500-1000
+  - 1000-3000
+  - 3000+
+age:
+  desc: 客户年龄段(从 CDM.SEX_ID + birth_dt 推断)
+  op: in
+  values:
+  - 25-35
+  - 18-25
+  - 35-45
+  - 45-55
+  - 55+
+occasion:
+  desc: 消费场合(从 c10.evt_time + prd_typ 推断)
+  op: in
+  values:
+  - 下午茶
+  - 午餐
+  - 早餐
+  - 晚餐
+  - 夜宵
+  - 聚会
+  - 工作日
+  - 周末
+  - 节日
+  - 自取
+  - 外卖
+  - 堂食
+  - 通勤
+taste:
+  desc: 口味偏好(从用户历史订单 + 券 productDesc 推断)
+  op: contains
+  values:
+  - 咸
+  - 甜
+  - 辣
+  - 麻
+  - 酸
+  - 苦
+  - 鲜
+  - 清淡
+  - 浓郁
+  - 冰
+  - 热
+  - 温
+  - 凉
+  - 微辣

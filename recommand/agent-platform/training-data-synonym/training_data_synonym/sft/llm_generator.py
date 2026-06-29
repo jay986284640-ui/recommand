@@ -74,6 +74,11 @@ class LLMGenerator:
         self._llm = llm_client
         self._template = prompt_template
 
+    @property
+    def model_name(self) -> str:
+        """Forward to the underlying client — used as `llm_model` in SFTSample."""
+        return self._llm.model_name
+
     def generate(
         self,
         *,
@@ -84,6 +89,7 @@ class LLMGenerator:
         target_turns: int,
         negative_type: Optional[str],
         sentence_template: str,
+        item_id: str = "",
     ) -> tuple[list[MessageTurn], list[str]]:
         prompt = build_sft_prompt(
             item_tags_dict=item_tags_dict,
@@ -95,7 +101,7 @@ class LLMGenerator:
             sentence_template=sentence_template,
             prompt_template=self._template,
         )
-        resp = self._llm.complete(prompt, temperature=0.7)
+        resp = self._llm.complete(prompt, temperature=0.7, item_id=item_id)
         if not isinstance(resp, dict):
             raise ValidationError(f"LLM response not a dict: {type(resp).__name__}")
         return parse_sft_response(resp)

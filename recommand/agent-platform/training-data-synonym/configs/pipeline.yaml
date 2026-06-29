@@ -3,7 +3,6 @@
 
 training_data_synonym:
   input:
-    sql_path: /opt/recommand/recommand/tabale_structer.sql
     source: hive                      # hive | mock
     hive:
       catalog: spark_catalog          # 由部署方注入
@@ -15,7 +14,7 @@ training_data_synonym:
         latest_n: 1
         # range: ["20260601", "20260615"]
         # single: "20260620"
-      sample_n_per_type: 100         # demo;全量留空表示读全表
+      sample_n_per_type:         # 留空=读全表;填数字=采样行数
       sensitive_columns_blocklist:
         - MASTERCARD_CUST_ID
         - Crt_Psn_Id
@@ -33,10 +32,14 @@ training_data_synonym:
     failures_path: ./tag_enrichment_failures.jsonl
     state_path: ./tag_enrichment_state.parquet
     llm:
-      model: claude-haiku-4-5
-      timeout_seconds: 15
+      model: deepseek-chat
+      provider: openai_compat
+      api_key: sk-ef5f2293bc234e5c8bf21346a1e9065c
+      base_url: https://api.deepseek.com/v1
+      timeout_seconds: 30
+      max_tokens: 1024
       batch_size: 16
-      temperature: 0.3                 # 推断要稳,温度低
+      temperature: 0.3
     dictionary_path: ./configs/dim_dictionary.yaml
     brand_dictionary_path: ./configs/brand_dictionary.yaml
 
@@ -52,11 +55,14 @@ training_data_synonym:
     negative_ratio: 0.10
     negative_types: [reject, pivot, unsatisfiable]
     llm:
-      model: claude-haiku-4-5
-      timeout_seconds: 15
+      model: deepseek-chat
+      provider: openai_compat
+      api_key: sk-ef5f2293bc234e5c8bf21346a1e9065c
+      base_url: https://api.deepseek.com/v1
+      timeout_seconds: 30
+      max_tokens: 2048
       batch_size: 16
       temperature: 0.7                 # 多样性要高
-    coverage:
       forced_coverage: true            # FR-011 强制覆盖
       template_repeat_limit: 0.20      # SC-007
     distance_sampling:                 # FR-013b — 与 lng/lat 解耦的字典采样

@@ -78,17 +78,14 @@ __all__ = [
 
 
 def synthesize_item_id(table_meta: TableMeta, raw: dict) -> str:
-    """Mount namespace-prefixed item_id per contracts/hive_read_v1.md."""
+    """Mount namespace-prefixed item_id. v2.5.2: keys are lowercase."""
     role = table_meta.inferred_role
     if role == Role.MEITUAN_SHOP:
-        sid = raw.get("str_id") or raw.get("Str_Id") or ""
-        return f"mt-{sid}"
+        return f"mt-{raw.get('str_id', '')}"
     if role == Role.SELF_SHOP:
-        sid = raw.get("shopid") or raw.get("shopId") or ""
-        return f"self-{sid}"
+        return f"self-{raw.get('shopid', '')}"
     if role == Role.COUPON:
-        cid = raw.get("couponid") or raw.get("couponId") or ""
-        return f"cpn-{cid}"
+        return f"cpn-{raw.get('couponid', '')}"
     return f"unknown-{raw.get('id', '')}"
 
 
@@ -110,23 +107,17 @@ def _normalize_lng_lat(value) -> Optional[float]:
 
 
 def extract_geo(
-    table_meta: TableMeta, raw: dict, address_row: dict | None = None
+    table_meta: TableMeta, raw: dict
 ) -> tuple[Optional[float], Optional[float]]:
-    """Pull (shop_lng, shop_lat) from raw per FR-008b + contracts/hive_read_v1.md.
+    """Pull (shop_lng, shop_lat) from raw per FR-008b.
 
-    Rules:
-      - 美团门店: raw.Lng / raw.Lat
-      - 自拓展门店: address_row.longitude / address_row.latitude (join by shopId)
-      - 优惠券:  none at this step (caller resolves via coupon_shop binding)
-    Returns (None, None) if missing / out-of-range / (0, 0) / 'null' / NaN.
+    v2.5.2: raw keys are normalized to lowercase by both MockHiveReader
+    and SparkHiveReader, so we just do ``raw.get("lng")``.
     """
-    if table_meta.inferred_role == Role.MEITUAN_SHOP:
-        lng = _normalize_lng_lat(raw.get("Lng") or raw.get("lng"))
-        lat = _normalize_lng_lat(raw.get("Lat") or raw.get("lat"))
-    elif table_meta.inferred_role == Role.SELF_SHOP:
-        src = address_row or raw
-        lng = _normalize_lng_lat(src.get("longitude"))
-        lat = _normalize_lng_lat(src.get("latitude"))
+    role = table_meta.inferred_role
+    if role in {Role.MEITUAN_SHOP, Role.SELF_SHOP}:
+        lng = _normalize_lng_lat(raw.get("lng"))
+        lat = _normalize_lng_lat(raw.get("lat"))
     else:
         return (None, None)
 

@@ -1,11 +1,51 @@
 # Tasks: 训练数据生成 (兴业 O2O 三品类 SFT 语料)
 
 **Input**: Design documents from `agent-platform/training-data-synonym/specs/`
-**Prerequisites**: plan.md (required), spec.md (v2.4, required for US), research.md, data-model.md, contracts/{item_tags_v2, sft_corpus_v2, param_op_types_v2, hive_read_v1}.md, quickstart.md
+**Prerequisites**: plan.md (required), spec.md (v2.5, required for US), research.md, data-model.md, contracts/{item_tags_v2, sft_corpus_v2, param_op_types_v2, hive_read_v1}.md, quickstart.md
 
 **Tests**: Constitution Principle III requires test-first;test tasks are interleaved before implementation tasks for each user story.
 
-**Organization**: Tasks grouped by user story (US1 = Stage 1 标签补全 / US2 = Stage 2 SFT 语料 / US3 = 划分);each story independently implementable, testable, deliverable.
+**Organization**: Tasks grouped by user story (US0 = Stage 1 全量标签抽取 / US1 = Stage 2 实际标注 / US2 = Stage 3 合成 SFT / US3 = 划分);each story independently implementable, testable, deliverable.
+
+> **v2.5.2 增量交付记录(2026-06-27)**: 3-Stage Pipeline 架构。
+> - ✅ `extract-tags` 子命令(Stage 1),`extract-dictionary` 保留为 legacy alias
+> - ✅ `enrich --dict-snapshot` 参数(Stage 2 接 Stage 1 约束集)
+> - ✅ `enrich` 自动导出 `dim_dictionary_snapshot.yaml` 到 output-dir
+> - ✅ `cmd_all` 更新为 Stage 2→3→split→verify 串联
+> - ✅ README/spec/plan/tasks/data-model/quickstart 文档全部更新
+>
+> **v2.5.1 增量交付记录(2026-06-26)**:
+> - ✅ `_meta.field_contract.<role>.required/optional` 字段契约(A-004) — `load_tables_config` 加载时校验
+> - ✅ `extract_geo` 移除 `address_row` 参数(A-005 禁隐式 JOIN) — 自拓展门店的 Lng/Lat 由上游 SQL 提供
+> - ✅ `tests/fixtures/hive/o2o_new_gut_shop_base.jsonl` 100/100 行补 Lng/Lat(模拟上游 SQL JOIN 产物)
+> - ✅ `enricher/name_inference.py` 新模块(FR-014):`is_rule_text` 规则文案识别 +
+>   `infer_brand/category/taste/occasion` 最长子串匹配 + `compute_name_hints` 聚合入口
+> - ✅ `LLMEnricher` 接入 name_inference:hints 注入 prompt + LLM 返回 None 时 fallback
+> - ✅ `LLMEnricher.inferred_used_count` + `inferred_log` 可观测 + `name_hint_used` 结构化日志
+> - ✅ `ConsumableMapper` 接入 name_inference:空 category 时用 name 推断 + 规则文案同样抑制 text hints
+> - ✅ `ConsumableMapper.inferred_count` + `name_inferred_category` 日志
+> - ✅ 新增 fixture:`empty_brand.jsonl`(5 条空 Brnd_Nm)+ `rule_text_coupon.jsonl`(5 条规则文案)
+> - ✅ 新增测试:`test_name_inference.py`(17 case)+ `test_llm_enricher.py` 3 case + `test_consumable_mapper.py` 3 case +
+>   `test_tables_config.py` 3 case(field_contract 校验)
+> - ✅ 226 测试全过(v2.5.1:181 → 226,+45)
+> - ✅ end-to-end demo coverage_avg 3.75 → 4.24
+>
+> **v2.5 增量交付记录(2026-06-26)**:
+> - ✅ `configs/tables.yaml` + `common/tables_config.py::load_tables_config` — A-003 YAML 表配置上线
+> - ✅ `EnrichmentPipeline` `tables_config_path=` 主路径,`sql_path=` legacy 兼容
+> - ✅ `cli tables-meta / enrich / extract-dictionary` 全部走 `--tables-config`
+> - ✅ `common/llm_client.py::OpenAICompatClient` — D-015 OpenAI 兼容 HTTP 客户端,`pyproject.toml` 新增 `[llm]` extra
+> - ✅ `LLMEnricher` / `ConsumableMapper` `rejection_count` + `logger.warning("dict_rejected")`
+> - ✅ `EnrichmentSummary.dict_rejected_count` + `EnrichmentFailure(error="dict_rejection")` 写盘
+> - ✅ `_self_check` 用真实计数计算 `dict_pass_rate`(原硬编码 1.0 已替换)
+> - ✅ `cli cmd_split` md5(item_id) 桶分 + SC-010 no-leak
+> - ✅ `cli cmd_verify` 聚合 SC-001/002/003/004/005/008/009/010 写 `verify_report.json`
+> - ✅ `cli cmd_all` enrich → sft → split → verify 串联
+> - ✅ `scripts/demo.sh` 重写走新 CLI 4 段 + `set -uo pipefail`
+> - ✅ `dim_dictionary.yaml`:merchant 19→82、taste 12→14(加 凉/微辣)、occasion 12→13(加 通勤)
+> - ✅ `tests/unit/common/test_tables_config.py` 新增 11 case
+> - ✅ 181 测试全过(原 164 + 新增 17)
+> - ⚠️ T014 `sql_parser/parser.py` 保留 deprecated,`tests/unit/sql_parser/test_parser.py` 仍通过
 
 ## Format: `[ID] [P?] [Story] Description`
 

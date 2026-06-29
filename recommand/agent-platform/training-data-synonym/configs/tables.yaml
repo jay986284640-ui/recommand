@@ -1,0 +1,137 @@
+# 业务表字段契约
+# v2.5.2: 列名使用小写(Hive/Spark 实际返回格式)
+#
+# 设计原则:
+#   1. 只声明 pipeline 真正读到的列 + sensitive 列
+#   2. 不做跨表 JOIN(由上游 SQL 视图解决)
+#   3. _meta.field_contract 声明每种 role 必须提供的字段
+#
+# 字段语义(role 标注):
+#   id        — item_id 来源(synthesize_item_id)
+#   name      — 商品/门店/券名
+#   brand     — merchant dim 源
+#   category  — category dim 源
+#   price     — avg_prc dim 源(主)
+#   alt_price — avg_prc dim 源(备选)
+#   lng/lat   — 几何(extract_geo)
+#   desc      — 券描述文本(consumable_type 推断)
+#   face      — 券面值
+#   city      — 城市
+#   district  — 区县
+
+_meta:
+  version: 1.2
+  spec_version: v2.5.2
+  format: table_meta_v1
+
+  field_contract:
+    meituan_shop:
+      required: [id, name, category, price, lng, lat]
+      optional: [alt_price, city, district]
+    self_shop:
+      required: [id, name, brand]
+      optional: [alt_price]
+    coupon:
+      required: [id, name, desc]
+      optional: [face]
+    address:
+      required: [id, lng, lat]
+    category:
+      required: [category]
+    coupon_shop:
+      required: [id]
+    discount:
+      required: [id, name]
+
+tables:
+
+  # ──── 3 张核心表 ────
+
+  - db: recommand_workspace
+    name: o2o_new_gut_shop_base_third
+    role: meituan_shop
+    partition_keys: [etl_dt]
+    etl_dt_synthetic: "20260620"
+    columns:
+      - { name: str_id,            type: VARCHAR,  role: id }
+      - { name: str_nm,            type: VARCHAR,  role: name }
+      - { name: cat_nm,            type: VARCHAR,  role: category }
+      - { name: avg_prc,           type: VARCHAR,  role: price }
+      - { name: mnt_pern_usr_num,  type: VARCHAR,  role: alt_price }
+      - { name: city_nm,           type: VARCHAR,  role: city }
+      - { name: cnty_nm,           type: VARCHAR,  role: district }
+      - { name: lng,               type: VARCHAR,  role: lng }
+      - { name: lat,               type: VARCHAR,  role: lat }
+    sensitive: [crt_psn_id, updt_psn_id]
+
+  - db: recommand_workspace
+    name: o2o_new_gut_shop_base
+    role: self_shop
+    partition_keys: []
+    etl_dt_synthetic: "20260620"
+    columns:
+      - { name: shopid,            type: VARCHAR,  role: id }
+      - { name: shopname,          type: VARCHAR,  role: name }
+      - { name: brnd_nm,           type: VARCHAR,  role: brand }
+      - { name: mnt_pern_usr_num,  type: VARCHAR,  role: alt_price }
+    sensitive: [opr_psn_id]
+
+  - db: recommand_workspace
+    name: o2o_new_gut_coupon_template
+    role: coupon
+    partition_keys: []
+    etl_dt_synthetic: "20260620"
+    columns:
+      - { name: couponid,           type: BIGINT,   role: id }
+      - { name: couponname,         type: VARCHAR,  role: name }
+      - { name: productdesc,        type: VARCHAR,  role: desc }
+      - { name: ruledescription,    type: VARCHAR,  role: desc }
+      - { name: faceprice,          type: DECIMAL,  role: face }
+    sensitive: [creator, updateperson]
+
+  # ──── 5 张辅助表 ────
+
+  - db: recommand_workspace
+    name: o2o_new_gut_shop_address
+    role: address
+    partition_keys: []
+    etl_dt_synthetic: "20260620"
+    columns:
+      - { name: shopid,     type: VARCHAR,  role: id }
+      - { name: longitude,  type: VARCHAR,  role: lng }
+      - { name: latitude,   type: VARCHAR,  role: lat }
+      - { name: detailaddr, type: VARCHAR,  role: address }
+
+  - db: recommand_workspace
+    name: o2o_new_gut_shop_category_mapping
+    role: category
+    partition_keys: []
+    etl_dt_synthetic: "20260620"
+    columns:
+      - { name: cat_nm, type: VARCHAR, role: category }
+
+  - db: recommand_workspace
+    name: o2o_new_gut_shop_category_meituan
+    role: category
+    partition_keys: []
+    etl_dt_synthetic: "20260620"
+    columns:
+      - { name: cat_nm, type: VARCHAR, role: category }
+
+  - db: recommand_workspace
+    name: o2o_new_gut_coupon_shop
+    role: coupon_shop
+    partition_keys: []
+    etl_dt_synthetic: "20260620"
+    columns:
+      - { name: couponid, type: BIGINT,  role: id }
+      - { name: shopid,   type: VARCHAR, role: id }
+
+  - db: recommand_workspace
+    name: o2o_new_gut_discounts_pay
+    role: discount
+    partition_keys: []
+    etl_dt_synthetic: "20260620"
+    columns:
+      - { name: discountspayid,   type: BIGINT,  role: id }
+      - { name: discountspayname, type: VARCHAR, role: name }

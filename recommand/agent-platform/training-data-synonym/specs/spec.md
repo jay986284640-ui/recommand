@@ -2,12 +2,69 @@
 
 **Feature Branch**: `training-data-synonym`
 **Created**: 2026-06-22
-**Status**: Draft (修订版 v2.4 — Stage 2 SFT 与 lng/lat 解耦,distance 桶化改由字典采样)
-**Input**: User description: "工程的输入是 `tabale_structer.sql` 中的各种表,推荐商品包含美团门店、自拓展门店、优惠券;工程分为两步:(1) 根据表中现有的数据借助模型能力补充缺失的 7 维标签;(2) 基于原始单据 + AI 补充数据生成 SFT 语料,最多 5 轮对话,涵盖所有商品的各个维度。"
+**Status**: v2.5.2 — 3-Stage Pipeline (extract-tags → enrich → sft)
+**Input**: User description: "工程的输入是 `tabale_structer.sql` 中的各种表,推荐商品包含美团门店、自拓展门店、优惠券;工程分为三步:(1) 全量标签抽取,从 Hive 抽取 brand/category/taste/occasion 字典;(2) 实际标注数据,LLM 推断 8 维标签,字典约束;(3) 合成 SFT 数据,标签 → 多轮对话语料。"
+
+> **v2.5.2 变更(2026-06-27)**: 3-Stage Pipeline 架构。
+> - **Stage 1 (`extract-tags`)**:全量标签抽取。从 Hive 原始字段(Brnd_Nm / Cat_Nm)统计频次,
+>   经 Levenshtein + Jaccard 聚类归一,输出 `brands_diff.yaml` / `categories_diff.yaml`
+>   供人工 review。合并 dim_dictionary.yaml 中 taste/occasion 等字典全集。
+>   产物:`dim_dictionary_snapshot.yaml`(8 维约束集,供 Stage 2 校验)。
+> - **Stage 2 (`enrich`)**:实际标注数据。接收 Stage 1 的 `--dict-snapshot`,LLM 推断
+>   8 维标签 + name_inference fallback + dict_rejection 可观测。自动导出
+>   `dim_dictionary_snapshot.yaml` 到 output-dir。
+>   产物:`item_tags.jsonl`(每行 8 维标签 + tag_source + llm_model)。
+> - **Stage 3 (`sft`)**:合成 SFT 数据。item_tags → 多轮对话训练语料 + 字典校验
+>   + 负样本 + coverage 检查。产物:`sft_corpus.jsonl`。
+
+> **v2.5.1 变更(2026-06-26)**:
+> - **A-004 新增**:`_meta.field_contract.<role>.required` 声明每种 role 必须提供的字段,
+>   loader 在加载时校验缺失并抛 `TablesConfigError`。
+> - **A-005 新增**:**禁隐式 JOIN**。`extract_geo` 移除 `address_row` 参数;
+>   自拓展门店的 `Lng`/`Lat` 由上游 SQL JOIN 或 fixture pre-join 提供。
+> - **FR-014 新增**:商品名称 fallback 推断。当 `Brnd_Nm` / `Cat_Nm` / `productDesc`
+>   为空,或为券抢购规则文案(`满50减10` / `代金券` / `限时抢购` / `核销` /
+>   `优惠券`)时,从 `Str_Nm` / `shopName` / `couponName` 按字典值做最长子串匹配推断
+>   brand / category / taste / occasion。规则文案识别命中即整体抑制该 item 推断
+>   (避免误判)。`LLMEnricher` 把 hints 注入 prompt + LLM 返回 None 时替换;`ConsumableMapper`
+>   当 `category=None` 时用 name 推断 category 再查 mapping。可观测:
+>   `LLMEnricher.inferred_used_count` + `ConsumableMapper.inferred_count` +
+>   `logger.info("name_hint_used", ...)` / `name_inferred_category` 结构化日志。
+>
+> **v2.5 变更(2026-06-26)**:
+> - **A-003 新增**:`configs/tables.yaml` 声明 db / name / role / columns / type / sensitive flags,
+>   取代从 `tabale_structer.sql` 解析 DDL 的旧路径。`tabale_structer.sql` 降级为业务参考文档,
+>   不再被运行时解析。`--sql <path>` CLI flag 保留为 deprecated alias。
+> - **D-015 新增**:OpenAI 兼容 HTTP LLM 客户端(`httpx` POST `/chat/completions`),
+>   `--provider openai_compat` 启用。Bearer Token + tenacity 重试 + T097 结构化日志。
+> - **SC-002 增强**:字典取值合规率由"硬编码 1.0"改为 `dict_pass_rate = 1 - dict_rejected_count / llm_calls`;
+>   reject 计数 / 失败盘 / log 三路可观测。reject 不阻塞主产物(保持向后兼容)。
+> - **新增 CLI**:`cmd_split`(md5 bucket 80/10/10 + SC-010 no-leak)、
+>   `cmd_verify`(SC-001~SC-010 聚合 + `verify_report.json`)、
+>   `cmd_all`(enrich → sft → split → verify 串联)。
 
 **Related**:
 
 - `agent-platform/training-data-synonym/docs/ALIGNMENT_cib_o2o.md` — 业务对齐说明
+
+---
+
+## 3-Stage Pipeline 概览
+
+```
+Stage 1: extract-tags          Stage 2: enrich                Stage 3: sft
+┌────────────────────┐   ┌────────────────────┐   ┌────────────────────┐
+│ 全量标签抽取        │   │ 实际标注数据         │   │ 合成 SFT 数据        │
+│                    │   │                    │   │                    │
+│ Hive Brnd_Nm/Cat_Nm│   │ Hive 原始数据       │   │ item_tags.jsonl    │
+│   频次统计 + 聚类    │──→│ LLM 推断 8 维标签    │──→│ 多轮对话语料生成     │
+│ + taste/occasion   │   │ 字典约束 + reject   │   │ 字典校验 + coverage │
+│   (dim_dictionary)  │   │ name_inference     │   │ 负样本 + 清洗 + 划分 │
+│                    │   │                    │   │                    │
+│ → brands_diff.yaml │   │ → item_tags.jsonl   │   │ → sft_corpus.jsonl │
+│ → snapshot (约束集) │   │ → snapshot (自动)    │   │ → train/val/test   │
+└────────────────────┘   └────────────────────┘   └────────────────────┘
+```
 - `agent-platform/synonym-dictionary/` — 同义词词表(姊妹工程)
 - `specs/001-promo-recommend-agent/spec.md` — LP Agent(下游消费方)
 - `tabale_structer.sql` — 业务库 DDL,本工程唯一外部输入
@@ -27,13 +84,25 @@
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 — AI 补全 8 维标签 (Priority: P1)
+### User Story 0 — 全量标签抽取 (Stage 1, Priority: P1)
 
-作为 LP 提参模型训练管线的上游,我需要把客户存放在 **Hive** 中(`recommand_workspace.*` 与 `cdm.*`,表结构以 `tabale_structer.sql` 为准)的三类业务记录(美团门店 / 自拓展门店 / 优惠券)的**原始单据**自动读取下来,然后补齐为带 **8 维商业属性标签**(7 维原有 + `consumable_type` 吃/喝)的"完整商品画像";对于源表中确实缺失的字段(例如:门店人均价没填、券的目标客群没标),由模型基于现有上下文(品类、品牌、商家、文案、券描述等)推断并写入;`distance` 与 `consumable_type` 不走 LLM,见 Clarifications。
+作为 Stage 2 数据标注的约束源,我需要从 Hive 原始数据中抽取全量合法标签值(brand/category/taste/occasion),经频次过滤 + 聚类归一后与人工字典合并,产出 `dim_dictionary_snapshot.yaml`(8 维约束集),防止后续 LLM 推断/语料生成时出现异常品牌、异常分类等数据。
 
-**Why this priority**:8 维标签是后续 SFT 语料生成、检索过滤、提参的共同地基;没有补全,90% 的真实商品无法直接进入训练样本。
+**Why this priority**:没有 Stage 1 约束集,Stage 2 LLM 可能推断出不存在于库中的品牌/分类(幻觉);Stage 3 SFT 语料也可能包含虚假标签值。Stage 1 产出是整个流水线的合法性基线。
 
-**Independent Test**:以"`tabale_structer.sql` schema + Hive 中 3 张核心表的真实分区(默认最新 `etl_dt`,每类抽 100 行)"为输入跑 Stage 1,期望输出 `item_tags.jsonl`,每行 1 个商品(`item_type ∈ {meituan_shop, self_shop, coupon}`),8 维标签覆盖率 ≥ 95%(原始 + AI 推断后),字典内合法率 100%,且 `tag_source` 字段标明每维"原始 / AI 推断 / 几何 / 推导 / 缺失"。CI 环境允许把 Hive 替换为 mock 数据源,行为不变。
+**Independent Test**:以 Hive 中 3 张核心表为输入跑 `extract-tags`,期望输出 `brands_diff.yaml`(新增/已有/移除三段) + 合并 dim_dictionary.yaml 中的 taste/occasion 字典全集,产生 `dim_dictionary_snapshot.yaml`。
+
+**Acceptance Scenarios**:
+1. **Given** Hive 表 Brnd_Nm 含 `["星巴克", "Starbucks", "星巴克(人民广场)"]` 3 条记录,**When** 跑 Stage 1,**Then** 输出品牌归一化为 `星巴克`(频次 2 + 变体 2),`brands_diff.yaml` 中 `added=[{canonical: 星巴克, frequency: 2, n_variants: 2, aliases: [Starbucks, 星巴克(人民广场)]}]`。
+2. **Given** `frequency-min=10` 且某品牌仅出现 3 次,**Then** 该品牌不进入 `added` 段(被过滤),但在 `raw_count/normalized_count/filtered_count` 中体现。
+
+### User Story 1 — 实际标注 8 维标签 (Stage 2, Priority: P1)
+
+作为 LP 提参模型训练管线的上游,我需要把 Hive 中三类业务记录的**原始单据**自动读取下来,由 LLM 推断补全 8 维商业属性标签,推断时以 Stage 1 的 `dim_dictionary_snapshot.yaml` 作为合法性约束(值不在字典中 → dim 置 null + 可观测)。`distance` 与 `consumable_type` 不走 LLM。
+
+**Why this priority**:8 维标签是后续 SFT 语料生成的基础;Stage 1 字典确保标注值合法。
+
+**Independent Test**:以 Hive 3 张核心表 + Stage 1 snapshot 为输入跑 Stage 2,期望输出 `item_tags.jsonl`,300+ 行,`dict_rejected_count` 可观测,`tag_source` 标明每维来源。
 
 **Acceptance Scenarios**:
 
@@ -46,9 +115,9 @@
 
 ---
 
-### User Story 2 — 生成 SFT 多轮对话语料 (Priority: P1)
+### User Story 2 — 合成 SFT 多轮对话语料 (Stage 3, Priority: P1)
 
-作为 LP Agent **意图识别 + 提参** 微调任务的训练管线,我需要每个商品产出**多条多轮对话样本**(单样本最多 5 轮),每条样本带 **ground-truth 8 维 params + intent + order_by**,且 N 条样本合起来要**覆盖该商品所有非 null 维度**(即所有"可被用户提问"的维度都至少被 1 条样本提及)。
+作为 LP Agent **意图识别 + 提参** 微调任务的训练管线,我需要使用 Stage 2 产出的 `item_tags.jsonl` 为每个商品生成**多条多轮对话样本**(单样本最多 5 轮),每条样本带 **ground-truth 8 维 params + intent + order_by**,且 N 条样本合起来要**覆盖该商品所有非 null 维度**(即所有"可被用户提问"的维度都至少被 1 条样本提及)。`dim_dictionary_snapshot.yaml`(Stage 1→Stage 2 自动导出)作为字典校验输入。
 
 **Why this priority**:这是工程的核心交付物,直接决定下游模型 P/R。没有这步,Stage 1 的标签只是中间产物。
 

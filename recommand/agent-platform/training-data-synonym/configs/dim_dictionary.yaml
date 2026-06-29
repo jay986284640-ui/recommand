@@ -33,25 +33,86 @@ consumable_type:
 merchant:
   desc: 品牌(从 o2o Brnd_Nm 抽取 + brand_dictionary.yaml 补全)
   values:
+    # 咖啡
     - 星巴克
     - 瑞幸
     - Costa
+    - Tim_Hortons
+    - Dunkin
+    - McCafe
+    - Blue_Bottle
+    - Peets
+    # 奶茶
     - 喜茶
     - 奈雪
     - 蜜雪冰城
     - 一点点
+    - CoCo
+    - 快乐柠檬
+    - 茶百道
+    - 古茗
+    - 书亦烧仙草
+    - 益禾堂
+    - 沪上阿姨
+    # 快餐
     - 肯德基
     - 麦当劳
-    - 汉堡王
+    - Burger_King
+    - Subway
     - 必胜客
+    - Domino
+    - Taco_Bell
+    - Wendys
+    - Popeyes
+    - Five_Guys
+    - Chick_fil_A
+    # 烘焙
     - 味多美
     - 好利来
+    - 巴黎贝甜
+    - 85度C
+    - 多乐之日
+    - 克莉丝汀
+    - 面包新语
+    - 幸福西饼
+    # 便利店
     - 7_Eleven
     - 全家
     - 罗森
+    - 便利蜂
+    - 邻几
+    - 十足
+    # 中餐
     - 海底捞
+    - 呷哺呷哺
+    - 味千拉面
     - 真功夫
     - 永和大王
+    - 吉野家
+    - 大米先生
+    - 乡村基
+    # 品类级 SKU(高频出现于 Brnd_Nm)
+    - 拿铁
+    - 美式
+    - 卡布奇诺
+    - 摩卡
+    - 焦糖玛奇朵
+    - 浓缩咖啡
+    - 波霸
+    - 芋圆
+    - 奶盖
+    - 水果茶
+    - 汉堡
+    - 披萨
+    - 薯条
+    - 鸡翅
+    - 炸鸡
+    - 火锅
+    - 烧烤
+    - 麻辣烫
+    - 兰州拉面
+    - 黄焖鸡
+    - 沙县小吃
   op: in
 
 avg_prc:
@@ -86,9 +147,33 @@ occasion:
     - 自取
     - 外卖
     - 堂食
+    - 通勤
   op: in
 
 taste:
-  desc: 口味偏好(从用户历史订单 + 券 productDesc 推断)
-  values: [甜, 咸, 辣, 麻, 酸, 苦, 鲜, 清淡, 浓郁, 冰, 热, 温]
+  desc: 口味偏好(从用户历史订单 + 券 productDesc + 商品名称推断)
+  values:
+    - 酸
+    - 酸爽
+    - 甜口
+    - 咸鲜
+    - 麻
+    - 清淡
+    - 辣
+    - 香辣
+    - 麻辣
+    - 酸辣
+    - 蒜香
+    - 酱香
+    - 奶香
+    - 焦香
+    - 烟熏
+    - 咖喱风味
+    - 果味
+    - 鲜
+    - 浓郁汤底
+    - 重口味
+    - 黄焖
+    - 卤香
+    - 红烧风味
   op: contains      # 数组语义,允许多值
