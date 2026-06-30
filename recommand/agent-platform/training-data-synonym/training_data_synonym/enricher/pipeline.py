@@ -11,9 +11,11 @@ emits item_tags.jsonl + failures + state + cold_start + summary.
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from threading import Lock
 from typing import Optional
 
 import yaml
@@ -45,6 +47,11 @@ from .profile_writer import write_item_profile
 from .writer import ItemTagsWriter
 
 logger = get_logger(__name__)
+
+# no-op context manager for single-threaded path
+class _NoopLock:
+    def __enter__(self): return self
+    def __exit__(self, *a): pass
 
 
 @dataclass
@@ -196,13 +203,17 @@ class EnrichmentPipeline:
             encoding="utf-8",
         )
 
-        # 2. Filter to core 3 tables
-        core_tables = [t for t in tables_meta if t.inferred_role in {Role.MEITUAN_SHOP, Role.SELF_SHOP, Role.COUPON}]
+        # 2. Filter by item_types from pipeline.yaml (default: all 3)
+        input_cfg = (self.config.pipeline.get("training_data_synonym") or {}).get("input") or {}
+        types_str = input_cfg.get("item_types") or ["meituan_shop", "self_shop", "coupon"]
+        target_roles = {getattr(Role, t.upper(), None) for t in types_str}
+        target_roles.discard(None)
+        core_tables = [t for t in tables_meta if t.inferred_role in target_roles]
         if not core_tables:
-            raise RuntimeError("No core tables (meituan_shop/self_shop/coupon) found in SQL")
+            raise RuntimeError(f"No tables found for item_types={types_str}")
 
-        # 3. Read + enrich
-        all_items: list[ItemTags] = []
+        # 3. Read all raw records first (fast), then enrich concurrently
+        all_raws: list = []  # (table_meta, raw_rec)
         for tm in core_tables:
             sample_n = (
                 (self.config.pipeline.get("training_data_synonym") or {})
@@ -216,10 +227,26 @@ class EnrichmentPipeline:
             )
             for raw_rec in self.hive.read(tm, spec):
                 self.summary.items_processed += 1
-                item_tags = self._enrich_one(raw_rec)
-                if item_tags is None:
-                    continue
-                all_items.append(item_tags)
+                all_raws.append(raw_rec)
+
+        # Concurrency: read from pipeline.yaml (default 4)
+        enrichment_cfg = (self.config.pipeline.get("training_data_synonym") or {}).get("enrichment") or {}
+        concurrency = int(enrichment_cfg.get("concurrency") or 4)
+
+        all_items: list[ItemTags] = []
+        lock = Lock()
+        if concurrency <= 1:
+            for raw_rec in all_raws:
+                item = self._enrich_one(raw_rec, lock)
+                if item:
+                    all_items.append(item)
+        else:
+            with ThreadPoolExecutor(max_workers=concurrency) as pool:
+                futures = {pool.submit(self._enrich_one, r, lock): r for r in all_raws}
+                for fut in as_completed(futures):
+                    item = fut.result()
+                    if item:
+                        all_items.append(item)
 
         # 4. Persist
         n = self.writer.write(all_items)
@@ -247,15 +274,19 @@ class EnrichmentPipeline:
 
     # ---- internal -------------------------------------------------------
 
-    def _enrich_one(self, raw_rec) -> Optional[ItemTags]:
-        """Enrich one RawRecord → ItemTags or None (cached skip)."""
+    def _enrich_one(self, raw_rec, lock: Optional[Lock] = None) -> Optional[ItemTags]:
+        """Enrich one RawRecord → ItemTags or None (cached skip).
+
+        ``lock`` guards thread-safe counter updates when concurrency > 1.
+        """
         raw = raw_rec.raw
         raw_md5 = compute_raw_md5(raw)
         # Cache check
         if not self.state.needs_recompute(
             raw_rec.item_id, raw_md5, self.config.dict_version, raw_rec.etl_dt
         ):
-            self.summary.items_skipped_cached += 1
+            with (lock or _NoopLock()):
+                self.summary.items_skipped_cached += 1
             return None
 
         sources: dict[str, TagOrigin] = {}
@@ -272,7 +303,8 @@ class EnrichmentPipeline:
 
         # 3. 5-dim LLM enricher (avg_prc/distance 不走 LLM)
         enriched = self.llm_enricher.enrich(raw, item_id=raw_rec.item_id)
-        self.summary.llm_calls += 1
+        with (lock or _NoopLock()):
+            self.summary.llm_calls += 1
         for dim in ("category", "merchant", "age", "occasion", "taste"):
             v = enriched.get(dim)
             tags[dim] = v
@@ -290,21 +322,22 @@ class EnrichmentPipeline:
         # had silently dropped. We sum into summary.dict_rejected_count and
         # write a single EnrichmentFailure row per item (aggregated details).
         rej_total = self.llm_enricher.rejection_count
-        delta = max(0, rej_total - self._last_llm_rej)
-        self._last_llm_rej = rej_total
-        if delta > 0:
-            self.summary.dict_rejected_count += delta
-            self.failures.append(
-                EnrichmentFailure(
-                    item_id=raw_rec.item_id,
-                    raw_response=None,
-                    error="dict_rejection",
-                    error_detail=json.dumps(
-                        self.llm_enricher.rejection_log[-delta:],
-                        ensure_ascii=False,
-                    ),
+        with (lock or _NoopLock()):
+            delta = max(0, rej_total - self._last_llm_rej)
+            self._last_llm_rej = rej_total
+            if delta > 0:
+                self.summary.dict_rejected_count += delta
+                self.failures.append(
+                    EnrichmentFailure(
+                        item_id=raw_rec.item_id,
+                        raw_response=None,
+                        error="dict_rejection",
+                        error_detail=json.dumps(
+                            self.llm_enricher.rejection_log[-delta:],
+                            ensure_ascii=False,
+                        ),
+                    )
                 )
-            )
 
         # 4. consumable_type mapping (uses category from above)
         ct_val, ct_src = self.consumable_mapper.map(
@@ -315,13 +348,12 @@ class EnrichmentPipeline:
         tags["consumable_type"] = ct_val
         sources["consumable_type"] = ct_src
 
-        # 4b. Part B: capture consumable_mapper rejections (logged but not
-        # double-recorded as failures; the warning was already emitted inside
-        # ConsumableMapper.map()).
-        ct_rej_total = self.consumable_mapper.rejection_count
-        ct_delta = max(0, ct_rej_total - self._last_ct_rej)
-        self._last_ct_rej = ct_rej_total
-        self.summary.dict_rejected_count += ct_delta
+        # 4b. Part B: capture consumable_mapper rejections
+        with (lock or _NoopLock()):
+            ct_rej_total = self.consumable_mapper.rejection_count
+            ct_delta = max(0, ct_rej_total - self._last_ct_rej)
+            self._last_ct_rej = ct_rej_total
+            self.summary.dict_rejected_count += ct_delta
 
         # 5. assemble (enforces invariant)
         item = assemble_item_tags(
