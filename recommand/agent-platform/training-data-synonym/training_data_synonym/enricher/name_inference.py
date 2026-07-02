@@ -57,9 +57,9 @@ def get_product_name(raw: dict) -> str:
     is otherwise informative.
     """
     raw_name = (
-        raw.get("Str_Nm")
-        or raw.get("shopName")
-        or raw.get("couponName")
+        raw.get("str_nm")
+        or raw.get("shopname")
+        or raw.get("couponname")
         or ""
     )
     if not raw_name:

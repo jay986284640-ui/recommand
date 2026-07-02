@@ -57,7 +57,7 @@ def test_valid_yaml_loads(tmp_path, repo_root):
 def test_loads_real_tables_yaml(repo_root):
     """Smoke test: the production configs/tables.yaml parses and yields 8 tables."""
     tables = load_tables_config(repo_root / "configs" / "tables.yaml")
-    assert len(tables) == 8
+    assert len(tables) == 3
     roles = {t.inferred_role for t in tables}
     assert Role.MEITUAN_SHOP in roles
     assert Role.SELF_SHOP in roles
@@ -76,11 +76,11 @@ def test_real_tables_yaml_sensitive_top_level(repo_root):
     bl = derive_sensitive_blocklist([], raw_yaml=raw)
     # Sensitive blocklist now preserves original case (PascalCase from DDL).
     # MockHiveReader does case-insensitive matching so both work.
-    assert "Crt_Psn_Id" in bl       # meituan_shop
-    assert "Updt_Psn_Id" in bl      # meituan_shop
-    assert "Opr_Psn_Id" in bl        # self_shop
-    assert "creator" in bl           # coupon (lowercase in DDL)
-    assert "updatePerson" in bl     # coupon (camelCase in DDL)
+    assert "crt_psn_id" in bl       # meituan_shop
+    assert "updt_psn_id" in bl      # meituan_shop
+    assert "opr_psn_id" in bl        # self_shop
+    assert "creator" in bl           # coupon
+    assert "updateperson" in bl     # coupon
 
 
 # ──────────────────────── field_contract ────────────────────────

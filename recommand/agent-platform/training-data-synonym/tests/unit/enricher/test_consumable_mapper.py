@@ -46,10 +46,10 @@ def test_default_for_unknown_category():
 
 
 def test_coupon_text_hint_fallback():
-    """When category missing but couponName/productDesc has hint → derived."""
+    """When category missing but couponname/productDesc has hint → derived."""
     m = ConsumableMapper(_mapping(), llm_client=None)
     v, s = m.map(category=None, item_id="x",
-                 raw_record={"couponName": "汉堡套餐", "productDesc": ""})
+                 raw_record={"couponname": "汉堡套餐", "productDesc": ""})
     assert v == "food"
     assert s == TagOrigin.DERIVED
 
@@ -135,7 +135,7 @@ def test_name_inferred_category_when_cat_nm_empty(caplog):
     m = ConsumableMapper(_mapping(), llm_client=None,
                           category_values=["咖啡", "奶茶", "快餐", "中餐", "西餐"])
     caplog.set_level(logging.INFO, logger="training_data_synonym.enricher.consumable_mapper")
-    raw = {"Str_Nm": "星巴克 咖啡 馆"}  # no Cat_Nm, but name has "咖啡"
+    raw = {"str_nm": "星巴克 咖啡 馆"}  # no Cat_Nm, but name has "咖啡"
     v, s = m.map(category=None, item_id="inf-test", raw_record=raw)
     # 咖啡 is in mapping → drink
     assert v == "drink"
@@ -148,7 +148,7 @@ def test_name_inference_skipped_for_rule_text_name():
     """v2.5: rule-text names (满50减10, 代金券) → no inference → default 'none'."""
     m = ConsumableMapper(_mapping(), llm_client=None,
                           category_values=["咖啡", "奶茶"])
-    raw = {"couponName": "[券] 咖啡 满50减10"}
+    raw = {"couponname": "[券] 咖啡 满50减10"}
     v, s = m.map(category=None, item_id="rule-test", raw_record=raw)
     assert v == "none"
     assert m.inferred_count == 0
@@ -158,7 +158,7 @@ def test_name_inference_no_match_returns_default():
     """v2.5: name has no category keyword → default fallback."""
     m = ConsumableMapper(_mapping(), llm_client=None,
                           category_values=["咖啡", "奶茶"])
-    raw = {"Str_Nm": "外星料理馆"}
+    raw = {"str_nm": "外星料理馆"}
     v, s = m.map(category=None, item_id="no-match", raw_record=raw)
     assert v == "none"
     assert m.inferred_count == 0

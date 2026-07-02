@@ -9,11 +9,19 @@ import logging
 
 from training_data_synonym.common.llm_client import MockLLMClient
 from training_data_synonym.enricher.llm_enricher import (
-    ENRICHABLE_DIMS,
     LLMEnricher,
     build_enrichment_prompt,
     parse_enrichment_response,
 )
+
+INFER_CFG = [
+    {"field": "category", "desc": "品类", "multiple": False},
+    {"field": "merchant", "desc": "品牌", "multiple": False},
+    {"field": "avg_prc", "desc": "价格区间", "multiple": False},
+    {"field": "age", "desc": "年龄段", "multiple": False},
+    {"field": "occasion", "desc": "场合", "multiple": False},
+    {"field": "taste", "desc": "口味", "multiple": True},
+]
 
 
 DICT = {
@@ -27,40 +35,44 @@ DICT = {
 
 PROMPT_TPL = (
     "你是助手。\n\n"
-    "候选字典:\n{dict_block}\n\n"
+    "{fields_schema}\n\n"
     "原始信息:\n{raw_record}"
 )
 
 
+def _make_enricher(llm_client, dict_=DICT, tpl=PROMPT_TPL):
+    return LLMEnricher(llm_client, INFER_CFG, dict_, tpl)
+
+
 def test_prompt_injection():
-    prompt = build_enrichment_prompt({"Cat_Nm": "咖啡"}, DICT, PROMPT_TPL)
+    prompt = build_enrichment_prompt({"cat_nm": "咖啡"}, INFER_CFG, PROMPT_TPL)
     assert "咖啡" in prompt
     assert "原始信息" in prompt
     assert "category" in prompt
 
 
 def test_parse_filters_unknown_fields():
-    out = parse_enrichment_response({"category": "咖啡", "bogus": "x", "merchant": None})
+    out = parse_enrichment_response(inference_config=INFER_CFG, payload={"category": "咖啡", "bogus": "x", "merchant": None})
     assert "category" in out
     assert "bogus" not in out
     assert "merchant" not in out  # None is dropped
 
 
 def test_parse_taste_array_to_list():
-    out = parse_enrichment_response({"taste": ["甜", "咸"]})
+    out = parse_enrichment_response(inference_config=INFER_CFG, payload={"taste": ["甜", "咸"]})
     assert out["taste"] == ["甜", "咸"]
 
 
 def test_parse_taste_string_to_list():
-    out = parse_enrichment_response({"taste": "甜"})
+    out = parse_enrichment_response(inference_config=INFER_CFG, payload={"taste": "甜"})
     assert out["taste"] == ["甜"]
 
 
 def test_enrich_filters_dict_violations():
-    enricher = LLMEnricher(MockLLMClient(seed=42), DICT, PROMPT_TPL)
-    out = enricher.enrich({"Cat_Nm": "咖啡", "Brnd_Nm": "星巴克"}, item_id="x")
+    enricher = _make_enricher(MockLLMClient(seed=42), DICT, PROMPT_TPL)
+    out = enricher.enrich({"cat_nm": "咖啡", "brnd_nm": "星巴克"}, item_id="x")
     # Mock may return '咖啡' or 'category=null'; check filter
-    for dim in ENRICHABLE_DIMS:
+    for dim in [c["field"] for c in INFER_CFG]:
         if out.get(dim) is not None:
             assert out[dim] in DICT[dim]["values"] or (
                 dim == "taste" and all(x in DICT["taste"]["values"] for x in out[dim])
@@ -75,9 +87,9 @@ def test_enrich_all_null_on_llm_failure():
         def complete(self, prompt, *, temperature=0.7, item_id=""):
             raise LLMTimeoutError("simulated")
 
-    enricher = LLMEnricher(FailClient(), DICT, PROMPT_TPL)
-    out = enricher.enrich({"Cat_Nm": "咖啡"}, item_id="x")
-    for dim in ENRICHABLE_DIMS:
+    enricher = _make_enricher(FailClient(), DICT, PROMPT_TPL)
+    out = enricher.enrich({"cat_nm": "咖啡"}, item_id="x")
+    for dim in [c["field"] for c in INFER_CFG]:
         assert out[dim] is None
 
 
@@ -96,10 +108,10 @@ def test_enrich_logs_dict_rejection(caplog):
                 "taste": ["甜", "外星味道"],
             }
 
-    enricher = LLMEnricher(BadLLM(seed=1), DICT, PROMPT_TPL)
+    enricher = _make_enricher(BadLLM(seed=1), DICT, PROMPT_TPL)
     caplog.set_level(logging.WARNING, logger="training_data_synonym.enricher.llm_enricher")
 
-    out = enricher.enrich({"Cat_Nm": "咖啡"}, item_id="test-item")
+    out = enricher.enrich({"cat_nm": "咖啡"}, item_id="test-item")
 
     # Dim is silently rejected → None
     assert out["category"] is None
@@ -131,8 +143,8 @@ def test_enrich_no_rejection_when_all_in_vocab():
                 "taste": ["甜"],
             }
 
-    enricher = LLMEnricher(GoodLLM(seed=1), DICT, PROMPT_TPL)
-    out = enricher.enrich({"Cat_Nm": "咖啡"}, item_id="x")
+    enricher = _make_enricher(GoodLLM(seed=1), DICT, PROMPT_TPL)
+    out = enricher.enrich({"cat_nm": "咖啡"}, item_id="x")
     assert enricher.rejection_count == 0
     assert enricher.rejection_log == []
     assert out["category"] == "咖啡"
@@ -143,8 +155,8 @@ def test_enrich_no_rejection_when_all_in_vocab():
 
 
 def test_enrich_uses_name_hint_when_llm_returns_none(caplog):
-    """v2.5: when raw Brnd_Nm is empty AND LLM returns None for merchant,
-    fall back to inferred hint from Str_Nm."""
+    """v2.5: when raw brnd_nm is empty AND LLM returns None for merchant,
+    fall back to inferred hint from str_nm."""
 
     class NullMerchantLLM(MockLLMClient):
         def complete(self, prompt, *, temperature=0.7, item_id=""):
@@ -157,12 +169,12 @@ def test_enrich_uses_name_hint_when_llm_returns_none(caplog):
                 "taste": ["甜"],
             }
 
-    enricher = LLMEnricher(NullMerchantLLM(seed=1), DICT, PROMPT_TPL)
+    enricher = _make_enricher(NullMerchantLLM(seed=1), DICT, PROMPT_TPL)
     caplog.set_level(logging.INFO, logger="training_data_synonym.enricher.llm_enricher")
 
-    # raw record has empty Brnd_Nm, Str_Nm has brand keyword
+    # raw record has empty brnd_nm, str_nm has brand keyword
     out = enricher.enrich(
-        {"Brnd_Nm": "", "Str_Nm": "星巴克(测试店 0)"},
+        {"brnd_nm": "", "str_nm": "星巴克(测试店 0)"},
         item_id="hint-test",
     )
 
@@ -189,14 +201,14 @@ def test_enrich_no_name_fallback_for_rule_text_name():
                 "taste": None,
             }
 
-    enricher = LLMEnricher(NullAllLLM(seed=1), DICT, PROMPT_TPL)
+    enricher = _make_enricher(NullAllLLM(seed=1), DICT, PROMPT_TPL)
     out = enricher.enrich(
-        {"couponName": "[券] 星巴克 30元代金券"},
+        {"couponname": "[券] 星巴克 30元代金券"},
         item_id="rule-test",
     )
     # No inference from rule text → all dims None (LLM returned None)
     assert enricher.inferred_used_count == 0
-    for dim in ENRICHABLE_DIMS:
+    for dim in [c["field"] for c in INFER_CFG]:
         assert out[dim] is None
 
 
@@ -217,9 +229,9 @@ def test_enrich_prompt_includes_name_hints_block():
                 "taste": None,
             }
 
-    enricher = LLMEnricher(CapturingLLM(seed=1), DICT, PROMPT_TPL)
+    enricher = _make_enricher(CapturingLLM(seed=1), DICT, PROMPT_TPL)
     enricher.enrich(
-        {"Str_Nm": "星巴克 咖啡 下午茶 冰"}, item_id="x"
+        {"str_nm": "星巴克 咖啡 下午茶 冰"}, item_id="x"
     )
     # Prompt should contain the hints block
     assert "提示" in captured["prompt"]
@@ -243,9 +255,9 @@ def test_enrich_rejection_log_capped_at_1000():
                 "taste": ["甜"],
             }
 
-    enricher = LLMEnricher(ManyBadLLM(), DICT, PROMPT_TPL)
+    enricher = _make_enricher(ManyBadLLM(), DICT, PROMPT_TPL)
     for i in range(1500):
-        enricher.enrich({"Cat_Nm": "咖啡"}, item_id=f"x-{i}")
+        enricher.enrich({"cat_nm": "咖啡"}, item_id=f"x-{i}")
     assert enricher.rejection_count == 1500
     assert len(enricher.rejection_log) == 1000
     assert enricher.rejection_log[0]["item_id"] == "x-500"  # tail starts at i=500

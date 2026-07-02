@@ -1,6 +1,8 @@
 # Quickstart: 训练数据生成 (兴业 O2O 三品类 SFT 语料)
 
-**Spec**: [./spec.md](./spec.md) (v2.5.2) | **Plan**: [./plan.md](./plan.md) | **Date**: 2026-06-27
+**Spec**: [./spec.md](./spec.md) (v2.5.2) | **Plan**: [./plan.md](./plan.md) | **Date**: 2026-07-01
+
+> **v2.5.2**: llm_inference 配置驱动,表可任意扩展,去掉 partition_keys,辅助表删除。
 
 > **v2.5.1 重要变更**:字段契约 `field_contract` 校验 + 禁隐式 JOIN + 商品名称 fallback 推断。
 > 详细见项目根 `README.md` §v2.5.1。
@@ -54,6 +56,25 @@ jq '[.[] | select(.inferred_role | IN("meituan_shop","self_shop","coupon"))] | l
 **SC 绑定**:SC-001。
 
 ---
+
+## LLM 推断配置(`tables.yaml._meta.llm_inference`)
+
+Stage 1 的 LLM 推断维度由配置文件完全控制,不硬编码在代码中:
+
+```yaml
+_meta:
+  llm_inference:
+    - { field: category, desc: 商业品类,如咖啡、快餐, multiple: false }
+    - { field: taste,    desc: 口味标签,如甜、辣,     multiple: true  }
+    - { field: cuisine,  desc: 菜系,如川菜、日料,     multiple: false }
+    - { field: occasion, desc: 消费场景,如早餐、聚会,  multiple: false }
+    - { field: consumable_type, desc: 吃或喝,food/drink/mixed, multiple: false }
+```
+
+- `field`: LLM 返回 JSON 的 key,也用作输出字段名
+- `desc`: LLM prompt 中的字段描述(引导性,非限制性)
+- `multiple`: true = 数组类型(如 taste),false = 单值
+- **新增维度**只需加一行;prompt 和解析代码自动适配
 
 ## 场景 2 — Stage 1 标签补全(mock Hive)
 

@@ -2,7 +2,7 @@
 
 **Feature Branch**: `training-data-synonym`
 **Created**: 2026-06-22
-**Status**: v2.5.2 — 3-Stage Pipeline (extract-tags → enrich → sft)
+**Status**: v2.5.2 — Config-driven LLM inference + extensible tables
 **Input**: User description: "工程的输入是 `tabale_structer.sql` 中的各种表,推荐商品包含美团门店、自拓展门店、优惠券;工程分为三步:(1) 全量标签抽取,从 Hive 抽取 brand/category/taste/occasion 字典;(2) 实际标注数据,LLM 推断 8 维标签,字典约束;(3) 合成 SFT 数据,标签 → 多轮对话语料。"
 
 > **v2.5.2 变更(2026-06-27)**: 3-Stage Pipeline 架构。

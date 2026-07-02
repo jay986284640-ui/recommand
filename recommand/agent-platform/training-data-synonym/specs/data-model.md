@@ -72,7 +72,7 @@
 | `columns[].type` | `str` | string | SQL 类型(VARCHAR / BIGINT / TIMESTAMP ...) |
 | `columns[].nullable` | `bool` | boolean | 是否可空(从 `NOT NULL` 推断;缺省 True) |
 | `columns[].comment` | `Optional[str]` | string | DDL 注释(如 `'纬度'`) |
-| `partition_keys` | `List[str]` | array<string> | 分区键(通常 `["etl_dt"]`) |
+| `partition_keys` | `List[str]` | array<string> | 分区键(**v2.5.2 已废弃,保留兼容**) |
 | `inferred_role` | `Role` | string | 推断的本工程角色(`meituan_shop / self_shop / coupon / address / category / coupon_shop / discount / customer / events / unknown`) |
 | `_format_version` | `str` | string | 固定 `"table_meta_v1"` |
 

@@ -111,8 +111,7 @@ def load_tables_config(path: str | Path) -> list[TableMeta]:
                 raise TablesConfigError(
                     f"table {db}.{name} column #{j} has empty name"
                 )
-            # Keep original case — Hive columns are PascalCase (Str_Id, Brnd_Nm).
-            # MockHiveReader does case-insensitive key matching so both work.
+            # v2.5.2: lowercase keys — MockHiveReader/SparkHiveReader both normalize
             if not col_type:
                 raise TablesConfigError(
                     f"table {db}.{name} column #{j} ({col_name}) has empty type"

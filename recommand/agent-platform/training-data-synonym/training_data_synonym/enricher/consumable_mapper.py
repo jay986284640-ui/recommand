@@ -150,7 +150,7 @@ class ConsumableMapper:
     def _extract_text(self, raw: dict) -> str:
         return " ".join(
             str(raw.get(k) or "")
-            for k in ("couponName", "productDesc", "ruleDescription", "Str_Nm", "shopName", "Brnd_Nm")
+            for k in ("couponname", "productdesc", "ruledescription", "str_nm", "shopname", "brnd_nm")
         )
 
     def _match_text_hints(self, text: str) -> Optional[str]:

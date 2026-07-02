@@ -52,19 +52,19 @@ class TestIsRuleText:
 
 class TestGetProductName:
     def test_priority_str_nm(self):
-        assert get_product_name({"Str_Nm": "星巴克(测试店 0)"}) == "星巴克(测试店 0)"
+        assert get_product_name({"str_nm": "星巴克(测试店 0)"}) == "星巴克(测试店 0)"
 
     def test_fallback_shop_name(self):
-        assert get_product_name({"shopName": "瑞幸"}) == "瑞幸"
+        assert get_product_name({"shopname": "瑞幸"}) == "瑞幸"
 
     def test_fallback_coupon_name(self):
-        assert get_product_name({"couponName": "[券] 星巴克 30元代金券"}) == (
+        assert get_product_name({"couponname": "[券] 星巴克 30元代金券"}) == (
             "星巴克 30元代金券"  # leading "[券]" stripped
         )
 
     def test_strip_only_when_informative(self):
         # If only "[券]" remains after strip, keep raw
-        n = get_product_name({"couponName": "[券]"})
+        n = get_product_name({"couponname": "[券]"})
         assert n == "[券]"
 
     def test_empty_returns_empty(self):
@@ -170,7 +170,7 @@ class TestComputeNameHints:
     }
 
     def test_full_inference(self):
-        raw = {"Str_Nm": "星巴克 咖啡 下午茶 冰"}
+        raw = {"str_nm": "星巴克 咖啡 下午茶 冰"}
         hints = compute_name_hints(raw, self.DIM_DICT, ["星巴克", "瑞幸"])
         assert hints["merchant"] == "星巴克"
         assert hints["category"] == "咖啡"
@@ -181,19 +181,19 @@ class TestComputeNameHints:
         assert compute_name_hints({}, self.DIM_DICT, []) == {}
 
     def test_rule_text_name(self):
-        raw = {"couponName": "星巴克 30元代金券"}
+        raw = {"couponname": "星巴克 30元代金券"}
         hints = compute_name_hints(raw, self.DIM_DICT, ["星巴克"])
         assert hints == {}  # rule text → no inference
 
     def test_no_match(self):
-        raw = {"Str_Nm": "外星料理"}
+        raw = {"str_nm": "外星料理"}
         hints = compute_name_hints(raw, self.DIM_DICT, ["星巴克"])
         assert all(v in (None, [], "") for v in hints.values())
 
     def test_brand_only_from_separate_dict(self):
         """brand_values passed separately from dim_dict (e.g., from
         brand_dictionary.yaml with 60+ entries)."""
-        raw = {"Str_Nm": "Tim_Hortons 咖啡"}
+        raw = {"str_nm": "Tim_Hortons 咖啡"}
         hints = compute_name_hints(
             raw,
             self.DIM_DICT,

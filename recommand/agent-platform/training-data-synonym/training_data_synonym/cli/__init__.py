@@ -147,7 +147,8 @@ def _build_hive_reader(args, configs_dir: Path):
     if args.source == "csv":
         from ..hive_reader.csv_reader import CsvReader
         csv_dir = getattr(args, "csv_dir", None) or "tests/fixtures/csv"
-        return CsvReader(csv_dir=csv_dir)
+        delimiter = getattr(args, "csv_delimiter", None) or ","
+        return CsvReader(csv_dir=csv_dir, delimiter=delimiter)
     raise ValueError(f"unknown source: {args.source} (expected 'mock', 'hive', or 'csv')")
 
 
@@ -742,6 +743,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--seed", type=int, default=42)
     sp.add_argument("--csv-dir", default="tests/fixtures/csv",
                     help="CSV reader directory (for --source csv)")
+    sp.add_argument("--csv-delimiter", default=",",
+                    help="CSV field delimiter (e.g. ',' '\\t' '|')")
     sp.add_argument("--dict-snapshot", type=Path, default=None,
                     help="Stage 1 snapshot YAML (constrains LLM output)")
     sp.set_defaults(func=cmd_enrich)

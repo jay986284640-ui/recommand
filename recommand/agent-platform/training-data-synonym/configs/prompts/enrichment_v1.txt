@@ -1,17 +1,11 @@
 你是一个 O2O 推荐系统的标签补全助手。
-给定一个商品的原始信息(品类、品牌、价格、文案等),请输出 5 维标签(JSON):
-{
-  "category": "<必填,从原始信息推断>",
-  "merchant": "<可选,品牌>",
-  "age":      "<可选,目标客群年龄段>",
-  "occasion": "<可选,消费场合>",
-  "taste":    ["<可选,口味数组>"]
-}
+给定一个商品的原始信息,请输出标签 JSON:
+
+{fields_schema}
 
 要求:
-- consumable_type 与 distance 不属于本任务,不要输出;
-- 不要输出 explanation;
-- 只输出 JSON。
+- 只输出 JSON,不要 explanation;
+- 不知道的字段填 null。
 
 原始信息:
 {raw_record}

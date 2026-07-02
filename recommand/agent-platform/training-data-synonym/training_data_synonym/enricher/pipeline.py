@@ -34,7 +34,6 @@ from ..data_model import (
     ItemTags,
     Role,
     TagOrigin,
-    TableMeta,
 )
 from ..hive_reader.base import HiveReader
 from .consumable_mapper import ConsumableMapper
@@ -124,8 +123,27 @@ class EnrichmentPipeline:
                 self.config.dim_dictionary.get("category") or {}
             ).get("values", []) or [],
         )
+        # Read LLM inference config from tables.yaml _meta
+        raw_yaml = yaml.safe_load(self.tables_config_path.read_text(encoding="utf-8")) or {}
+        inference_config = (raw_yaml.get("_meta") or {}).get("llm_inference") or [
+            {"field": "category", "desc": "品类", "multiple": False},
+            {"field": "merchant", "desc": "品牌", "multiple": False},
+            {"field": "age", "desc": "年龄段", "multiple": False},
+            {"field": "occasion", "desc": "场合", "multiple": False},
+            {"field": "taste", "desc": "口味", "multiple": True},
+        ]
+        # Store per-table derived fields config (from tables.yaml)
+        self._tables_derived: dict[str, dict] = {}
+        for t in (raw_yaml.get("tables") or []):
+            role = (t.get("role") or "").lower()
+            derived = t.get("derived_fields") or {}
+            self._tables_derived[role] = derived
+        # Default fallback
+        self._derived: dict = self._tables_derived.get("meituan_shop", {})
+
         self.llm_enricher = LLMEnricher(
             llm_client=self.llm,
+            inference_config=inference_config,
             dictionary=self.config.dim_dictionary,
             prompt_template=self.prompt_template,
             constrain_to_dict=getattr(self, "_constrain_to_dict", True),
@@ -203,9 +221,9 @@ class EnrichmentPipeline:
             encoding="utf-8",
         )
 
-        # 2. Filter by item_types from pipeline.yaml (default: all 3)
+        # 2. Filter by item_types from pipeline.yaml (default: all configured tables)
         input_cfg = (self.config.pipeline.get("training_data_synonym") or {}).get("input") or {}
-        types_str = input_cfg.get("item_types") or ["meituan_shop", "self_shop", "coupon"]
+        types_str = input_cfg.get("item_types") or [t.inferred_role.value for t in tables_meta]
         target_roles = {getattr(Role, t.upper(), None) for t in types_str}
         target_roles.discard(None)
         core_tables = [t for t in tables_meta if t.inferred_role in target_roles]
@@ -250,10 +268,10 @@ class EnrichmentPipeline:
 
         # 4. Persist
         n = self.writer.write(all_items)
-        n_profile = write_item_profile(all_items, self.output_dir / "item_profile.jsonl")
+        write_item_profile(all_items, self.output_dir / "item_profile.jsonl")
         self.state.flush()
         # Cold start
-        from .cold_start import ColdStartWriter, is_cold_start
+        from .cold_start import ColdStartWriter
         cs_writer = ColdStartWriter(self.cold_start_path)
         self.summary.items_cold_start = cs_writer.write(all_items)
 
@@ -301,18 +319,22 @@ class EnrichmentPipeline:
         #    Will be set after we get category from llm_enricher
         sources["consumable_type"] = TagOrigin.MISSING  # temporary
 
-        # 3. 5-dim LLM enricher (avg_prc/distance 不走 LLM)
+        # 3. LLM enricher (fields defined by config)
         enriched = self.llm_enricher.enrich(raw, item_id=raw_rec.item_id)
         with (lock or _NoopLock()):
             self.summary.llm_calls += 1
-        for dim in ("category", "merchant", "age", "occasion", "taste"):
+        for item in self.llm_enricher._config:
+            dim = item["field"]
             v = enriched.get(dim)
             tags[dim] = v
             if v is not None:
                 sources[dim] = TagOrigin.AI if self._is_ai_dim_source(dim, raw, v) else TagOrigin.RAW
 
-        # avg_prc: 仅从表字段桶化,不做 LLM 推断
-        avg_val = self._bucket_price(raw)
+        # avg_prc: per-table derived config (single column → bucket)
+        role = raw_rec.item_type.value
+        derived = self._tables_derived.get(role) or self._derived
+        avg_col = derived.get("avg_prc", "avg_prc") if derived else "avg_prc"
+        avg_val = self._bucket_price(raw, str(avg_col)) if avg_col else None
         tags["avg_prc"] = avg_val
         sources["avg_prc"] = TagOrigin.RAW if avg_val else TagOrigin.MISSING
 
@@ -380,10 +402,13 @@ class EnrichmentPipeline:
         return item
 
     @staticmethod
-    def _bucket_price(raw: dict) -> Optional[str]:
-        """Bucket avg_prc from raw column values (no LLM)."""
+    def _bucket_price(raw: dict, col: str) -> Optional[str]:
+        """Bucket a single raw column into price range."""
+        val = raw.get(col)
+        if val is None:
+            return None
         try:
-            avg = float(raw.get("Avg_Prc") or raw.get("Mnt_Pern_Usr_Num") or raw.get("facePrice") or -1)
+            avg = float(val)
         except (TypeError, ValueError):
             return None
         if avg <= 0:
@@ -395,18 +420,15 @@ class EnrichmentPipeline:
         return "200+"
 
     def _is_ai_dim_source(self, dim: str, raw: dict, value) -> bool:
-        """Heuristic: source = raw if the value is exactly the raw column;
-        else ai. For demo: merchant matches Brnd_Nm / Str_Nm → raw; else ai.
-        """
+        """Heuristic: source = raw if value matches raw column; else ai."""
         if dim == "merchant":
-            raw_candidates = [raw.get("Brnd_Nm"), raw.get("Str_Nm"), raw.get("shopName")]
+            raw_candidates = [raw.get("brnd_nm"), raw.get("str_nm"), raw.get("shopname")]
             return value not in [str(c) for c in raw_candidates if c]
         if dim == "category":
-            return value != raw.get("Cat_Nm")
+            return value != raw.get("cat_nm")
         if dim == "avg_prc":
-            # avg_prc is bucketed; raw if matches bucketed avg_raw
             try:
-                avg_raw = float(raw.get("Avg_Prc") or raw.get("Mnt_Pern_Usr_Num") or -1)
+                avg_raw = float(raw.get("avg_prc") or raw.get("mnt_pern_usr_num") or -1)
             except (TypeError, ValueError):
                 return True
             buckets = [(0, 30), (30, 50), (50, 100), (100, 200), (200, 10**9)]
@@ -416,7 +438,6 @@ class EnrichmentPipeline:
                 if lo <= avg_raw < hi:
                     return value != label
             return True
-        # default: ai fallback path
         return True
 
     def _self_check(self, items: list[ItemTags]) -> None:

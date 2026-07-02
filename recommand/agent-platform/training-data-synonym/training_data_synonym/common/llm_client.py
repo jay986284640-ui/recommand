@@ -139,9 +139,9 @@ class MockLLMClient(LLMClient):
         except (json.JSONDecodeError, ValueError):
             raw = {}
 
-        cat = raw.get("Cat_Nm") or raw.get("couponName")
-        merch = raw.get("Brnd_Nm") or raw.get("Str_Nm")
-        avg = raw.get("Avg_Prc")
+        cat = raw.get("cat_nm") or raw.get("couponname")
+        merch = raw.get("brnd_nm") or raw.get("str_nm")
+        avg = raw.get("avg_prc")
 
         return {
             "category": cat if cat else "咖啡",

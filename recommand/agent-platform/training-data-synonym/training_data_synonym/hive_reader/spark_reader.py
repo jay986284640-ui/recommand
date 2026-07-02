@@ -113,15 +113,7 @@ class SparkHiveReader(HiveReader):
                    if c.name not in spec.sensitive_columns_blocklist]
         projection = ", ".join(f"`{c}`" for c in columns)
 
-        # Build SQL: non-partitioned tables skip the WHERE clause
-        if partitions and partitions != [""]:
-            pk = table_meta.partition_keys[0] if table_meta.partition_keys else "etl_dt"
-            partition_filter = " OR ".join(f"`{pk}`='{p}'" for p in partitions)
-            sql = f"SELECT {projection} FROM {full} WHERE {partition_filter}"
-        else:
-            sql = f"SELECT {projection} FROM {full}"
-
-        # sample_n_per_type: add LIMIT if set (null/None = read all)
+        sql = f"SELECT {projection} FROM {full}"
         if spec.sample_n_per_type:
             sql += f" LIMIT {spec.sample_n_per_type}"
         try:
@@ -142,7 +134,7 @@ class SparkHiveReader(HiveReader):
                     )
             item_id = synthesize_item_id(table_meta, raw)
             shop_lng, shop_lat = extract_geo(table_meta, raw)
-            etl_dt = raw.pop("etl_dt", (partitions[0] if partitions else "")) or (partitions[0] if partitions else "") or "20260620"
+            etl_dt = raw.pop("etl_dt", "20260620") or "20260620"
             yield RawRecord(
                 item_id=item_id,
                 item_type=table_meta.inferred_role,
