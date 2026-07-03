@@ -164,7 +164,7 @@ class TestInferOccasion:
 class TestComputeNameHints:
     DIM_DICT = {
         "category": {"values": ["咖啡", "奶茶", "快餐", "中餐"]},
-        "merchant": {"values": ["星巴克", "瑞幸", "麦当劳"]},
+        "brand": {"values": ["星巴克", "瑞幸", "麦当劳"]},
         "taste": {"values": ["甜", "咸", "辣", "冰"]},
         "occasion": {"values": ["早餐", "下午茶", "周末"]},
     }
@@ -172,7 +172,7 @@ class TestComputeNameHints:
     def test_full_inference(self):
         raw = {"str_nm": "星巴克 咖啡 下午茶 冰"}
         hints = compute_name_hints(raw, self.DIM_DICT, ["星巴克", "瑞幸"])
-        assert hints["merchant"] == "星巴克"
+        assert hints["brand"] == "星巴克"
         assert hints["category"] == "咖啡"
         assert hints["occasion"] == "下午茶"
         assert "冰" in hints["taste"]
@@ -199,5 +199,5 @@ class TestComputeNameHints:
             self.DIM_DICT,
             ["星巴克", "瑞幸", "Tim_Hortons", "Costa"],
         )
-        assert hints["merchant"] == "Tim_Hortons"
+        assert hints["brand"] == "Tim_Hortons"
         assert hints["category"] == "咖啡"

@@ -25,9 +25,9 @@ from ..data_model import HiveReadSpec, RawRecord, Role, TableMeta
 class HiveReader(ABC):
     """Abstract base for Hive row readers. Three implementations:
 
-      - MockHiveReader (CI)
-      - SparkHiveReader (production, PySpark Hive Catalog)
-      - PyHiveReader  (optional backend, no Spark env)
+    - MockHiveReader (CI)
+    - SparkHiveReader (production, PySpark Hive Catalog)
+    - PyHiveReader  (optional backend, no Spark env)
     """
 
     @abstractmethod
@@ -35,9 +35,7 @@ class HiveReader(ABC):
         """Return available etl_dt partition values (YYYYMMDD), sorted desc."""
 
     @abstractmethod
-    def read(
-        self, table_meta: TableMeta, spec: HiveReadSpec
-    ) -> Iterator[RawRecord]:
+    def read(self, table_meta: TableMeta, spec: HiveReadSpec) -> Iterator[RawRecord]:
         """Yield RawRecord rows from the table filtered by spec.etl_dt.
 
         MUST perform:
@@ -78,15 +76,11 @@ __all__ = [
 
 
 def synthesize_item_id(table_meta: TableMeta, raw: dict) -> str:
-    """Mount namespace-prefixed item_id. v2.5.2: keys are lowercase."""
-    role = table_meta.inferred_role
-    if role == Role.MEITUAN_SHOP:
-        return f"mt-{raw.get('str_id', '')}"
-    if role == Role.SELF_SHOP:
-        return f"self-{raw.get('shopid', '')}"
-    if role == Role.COUPON:
-        return f"cpn-{raw.get('couponid', '')}"
-    return f"unknown-{raw.get('id', '')}"
+    """Return the primary-key value from ``raw`` using ``table_meta.item_id``."""
+    key = table_meta.item_id
+    if not key:
+        return ""
+    return str(raw.get(key, "") or "")
 
 
 # Convenience: don't re-import dataclass field at module level
@@ -106,9 +100,7 @@ def _normalize_lng_lat(value) -> Optional[float]:
     return f
 
 
-def extract_geo(
-    table_meta: TableMeta, raw: dict
-) -> tuple[Optional[float], Optional[float]]:
+def extract_geo(table_meta: TableMeta, raw: dict) -> tuple[Optional[float], Optional[float]]:
     """Pull (shop_lng, shop_lat) from raw per FR-008b.
 
     v2.5.2: raw keys are normalized to lowercase by both MockHiveReader

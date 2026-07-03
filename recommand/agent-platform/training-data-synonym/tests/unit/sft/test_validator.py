@@ -9,7 +9,7 @@ from training_data_synonym.sft.validator import validate_sft_sample
 DICT = {
     "category": {"values": ["咖啡", "奶茶"]},
     "consumable_type": {"values": ["food", "drink", "mixed", "none"]},
-    "merchant": {"values": ["星巴克", "瑞幸"]},
+    "brand": {"values": ["星巴克", "瑞幸"]},
     "avg_prc": {"values": ["0-30", "30-50"]},
     "distance": {"values": ["0-500", "500-1000"]},
     "age": {"values": ["18-25", "25-35"]},
@@ -30,7 +30,7 @@ def _ok_sample() -> SFTSample:
         params={
             "category": {"op": "in", "values": ["咖啡"]},
             "consumable_type": {"op": "eq", "values": "drink"},
-            "merchant": None,
+            "brand": None,
             "avg_prc": None,
             "distance": None,
             "age": None,

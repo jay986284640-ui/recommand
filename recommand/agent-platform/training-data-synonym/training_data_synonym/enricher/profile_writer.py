@@ -1,79 +1,60 @@
-"""item_profile writer — flat JSONL merging Hive raw columns + AI tags.
+"""item_profile writer — flat JSONL: declared columns + AI-inferred dims.
 
-Produces ``item_profile.jsonl`` (Stage 2 output) where each line is a flat dict
-with Hive columns (str_id, str_nm, type, city_nm, cnty_nm, lng, lat, cat_nm)
-and 8 AI-inferred dims inline.
+Produces ``item_profile.jsonl`` where each line carries the raw columns
+declared in tables.yaml ``columns`` plus the AI-inferred dimensions from
+``_meta.llm_inference``.
+
+Synthetic fields (type, distance, age) are intentionally excluded.
+``avg_prc`` comes from the raw column, never from AI inference.
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
-from ..data_model import DIM_ORDER, ItemTags, Role
-
-# Hive column → profile key mapping, per item_type
-_PROFILE_MAP = {
-    Role.MEITUAN_SHOP: {
-        "str_id":   "Str_Id",
-        "str_nm":   "Str_Nm",
-        "cat_nm":   "Cat_Nm",
-    },
-    Role.SELF_SHOP: {
-        "str_id":   "shopid",
-        "str_nm":   "shopName",
-        "cat_nm":   "Brnd_Nm",   # self_shop has no Cat_Nm; use Brnd_Nm as name fallback
-    },
-    Role.COUPON: {
-        "str_id":   "couponId",
-        "str_nm":   "couponName",
-        "cat_nm":   None,        # coupon template has no category column
-    },
-}
-
-# Type abbreviations for the profile
-_TYPE_LABEL = {
-    Role.MEITUAN_SHOP: "mt_shop",
-    Role.SELF_SHOP:    "self_shop",
-    Role.COUPON:       "coupon",
-}
-
-# Geo fields come from raw_record, not tags
-_GEO_FIELDS = ["Lng", "Lat"]
-_CITY_FIELDS = ["City_Nm", "City_Nm", "Cnty_Nm"]
+from ..data_model import ItemTags
 
 
-def _get(raw: dict, *keys: str) -> str | None:
-    for k in keys:
-        v = raw.get(k)
-        if v is not None:
-            return str(v)
-    return None
+def write_item_profile(
+    items: list[ItemTags],
+    path: str | Path,
+    *,
+    llm_dims: set[str] | None = None,
+    allowed_fields: dict[str, set[str]] | None = None,
+) -> int:
+    """Write ``item_profile.jsonl``. Returns number of rows written.
 
-
-def write_item_profile(items: list[ItemTags], path: str | Path) -> int:
-    """Write ``item_profile.jsonl``. Returns number of rows written."""
+    Args:
+        items: enriched items with raw_record + tags.
+        path: output JSONL path.
+        llm_dims: dimension names to overlay from ``item.tags``.
+                  Should be derived from tables.yaml ``_meta.llm_inference``.
+        allowed_fields: ``{role: {column_name, ...}}`` — only these raw
+                        columns are emitted.  Built from tables.yaml
+                        ``columns[*].name``.  When None, all raw columns kept.
+    """
+    dims: set[str] = llm_dims or set()
     out = Path(path)
     out.parent.mkdir(parents=True, exist_ok=True)
     written = 0
     with out.open("w", encoding="utf-8") as f:
         for item in items:
             raw = item.raw_record
-            role = item.item_type
-            mapping = _PROFILE_MAP.get(role, {})
-            type_label = _TYPE_LABEL.get(role, "unknown")
+            role_key = item.item_type.value if item.item_type else "unknown"
+            keep = allowed_fields.get(role_key) if allowed_fields else None
 
-            profile: dict[str, object] = {
-                "str_id":   _get(raw, *(k for k in [mapping.get("str_id", "")] if k)),
-                "str_nm":   _get(raw, *(k for k in [mapping.get("str_nm", "")] if k)),
-                "type":     type_label,
-                "city_nm":  _get(raw, "City_Nm", "city_nm"),
-                "cnty_nm":  _get(raw, "Cnty_Nm", "cnty_nm"),
-                "lng":      _get(raw, "Lng", "lng"),
-                "lat":      _get(raw, "Lat", "lat"),
-                "cat_nm":   _get(raw, *(k for k in [mapping.get("cat_nm", "")] if k)),
-            }
-            # Merge 8-dim AI tags
-            for dim in DIM_ORDER:
+            if keep is not None:
+                profile: dict[str, object] = {
+                    k: v for k, v in raw.items() if k in keep
+                }
+            else:
+                profile = dict(raw)
+                profile.pop("_extra", None)
+                profile.pop("etl_dt", None)
+
+            # Overlay AI-inferred dimension tags (always write, even if null)
+            for dim in dims:
                 profile[dim] = item.tags.get(dim)
 
             f.write(json.dumps(profile, ensure_ascii=False) + "\n")

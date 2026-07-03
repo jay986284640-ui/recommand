@@ -145,7 +145,7 @@ class MockLLMClient(LLMClient):
 
         return {
             "category": cat if cat else "咖啡",
-            "merchant": merch if merch else None,
+            "brand": merch if merch else None,
             "avg_prc": self._bucket_price(avg) if avg else None,
             "age": "25-35" if self._rng.random() > 0.5 else None,
             "occasion": self._rng.choice(["下午茶", "午餐", None]),
@@ -229,6 +229,7 @@ def _extract_json(text: str) -> dict[str, Any]:
         json.JSONDecodeError: when content is not valid JSON.
         ValidationError: when the parsed payload is not a dict.
     """
+    print(text)
     s = (text or "").strip()
     # Strip a leading ```json (or ```) fence
     s = re.sub(r"<think>.*?</think>\n\n", "", s, flags=re.IGNORECASE | re.DOTALL)

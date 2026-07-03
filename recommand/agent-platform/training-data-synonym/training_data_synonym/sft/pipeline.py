@@ -254,8 +254,10 @@ class SFTPipeline:
         """
         params: dict = {d: None for d in DIM_ORDER}
 
-        # 6 non-distance dims (verbatim from item.tags)
-        for d in ("category", "consumable_type", "merchant", "avg_prc", "age", "occasion", "taste"):
+        # All non-distance dims (verbatim from item.tags)
+        for d in DIM_ORDER:
+            if d == "distance":
+                continue
             v = item.tags.get(d)
             if v is not None:
                 if d == "consumable_type":

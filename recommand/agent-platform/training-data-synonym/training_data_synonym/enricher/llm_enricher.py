@@ -116,7 +116,7 @@ class LLMEnricher:
         self._template = prompt_template
         self._constrain = constrain_to_dict
         self._brand_values = brand_values or (
-            dictionary.get("merchant") or {}
+            dictionary.get("brand") or {}
         ).get("values", []) or []
 
         self.rejection_count: int = 0

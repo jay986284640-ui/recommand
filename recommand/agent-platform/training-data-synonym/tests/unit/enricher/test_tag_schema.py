@@ -11,11 +11,11 @@ def test_invariant_non_distance():
         item_id="x",
         item_type=Role.MEITUAN_SHOP,
         raw_record={},
-        tags={"category": None, "consumable_type": "drink", "merchant": None,
+        tags={"category": None, "consumable_type": "drink", "brand": None,
               "avg_prc": "30-50", "distance": None, "age": None,
               "occasion": None, "taste": None},
         sources={"category": TagOrigin.MISSING, "consumable_type": TagOrigin.DERIVED,
-                 "merchant": TagOrigin.MISSING, "avg_prc": TagOrigin.RAW,
+                 "brand": TagOrigin.MISSING, "avg_prc": TagOrigin.RAW,
                  "distance": TagOrigin.GEO, "age": TagOrigin.MISSING,
                  "occasion": TagOrigin.MISSING, "taste": TagOrigin.MISSING},
     )

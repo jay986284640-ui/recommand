@@ -23,7 +23,7 @@ from .data_model import DIM_ORDER
 OP_BY_DIM: dict[str, set[str]] = {
     "category": {"in"},
     "consumable_type": {"eq"},
-    "merchant": {"in"},
+    "brand": {"in"},
     "avg_prc": {"in"},
     "distance": {"in", "not_in"},
     "age": {"in"},

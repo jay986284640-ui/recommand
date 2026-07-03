@@ -1,0 +1,12 @@
+{
+  "items_processed": 9,
+  "items_enriched": 9,
+  "items_cold_start": 0,
+  "llm_calls": 9,
+  "llm_failures": 0,
+  "dict_pass_rate": 1.0,
+  "coverage_avg": 6.222222222222222,
+  "dict_rejected_count": 0,
+  "started_at": "2026-07-03T04:40:23.327686Z",
+  "finished_at": "2026-07-03T04:40:26.671005Z"
+}

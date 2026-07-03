@@ -16,7 +16,7 @@ from training_data_synonym.enricher.llm_enricher import (
 
 INFER_CFG = [
     {"field": "category", "desc": "品类", "multiple": False},
-    {"field": "merchant", "desc": "品牌", "multiple": False},
+    {"field": "brand", "desc": "品牌", "multiple": False},
     {"field": "avg_prc", "desc": "价格区间", "multiple": False},
     {"field": "age", "desc": "年龄段", "multiple": False},
     {"field": "occasion", "desc": "场合", "multiple": False},
@@ -26,7 +26,7 @@ INFER_CFG = [
 
 DICT = {
     "category": {"values": ["咖啡", "奶茶", "快餐"]},
-    "merchant": {"values": ["星巴克", "瑞幸"]},
+    "brand": {"values": ["星巴克", "瑞幸"]},
     "avg_prc": {"values": ["0-30", "30-50"]},
     "age": {"values": ["18-25", "25-35"]},
     "occasion": {"values": ["下午茶", "午餐"]},
@@ -52,10 +52,10 @@ def test_prompt_injection():
 
 
 def test_parse_filters_unknown_fields():
-    out = parse_enrichment_response(inference_config=INFER_CFG, payload={"category": "咖啡", "bogus": "x", "merchant": None})
+    out = parse_enrichment_response(inference_config=INFER_CFG, payload={"category": "咖啡", "bogus": "x", "brand": None})
     assert "category" in out
     assert "bogus" not in out
-    assert "merchant" not in out  # None is dropped
+    assert "brand" not in out  # None is dropped
 
 
 def test_parse_taste_array_to_list():
@@ -101,7 +101,7 @@ def test_enrich_logs_dict_rejection(caplog):
         def complete(self, prompt, *, temperature=0.7, item_id=""):
             return {
                 "category": "外星品类",
-                "merchant": "外星品牌",
+                "brand": "外星品牌",
                 "avg_prc": "30-50",
                 "age": "25-35",
                 "occasion": "下午茶",
@@ -115,7 +115,7 @@ def test_enrich_logs_dict_rejection(caplog):
 
     # Dim is silently rejected → None
     assert out["category"] is None
-    assert out["merchant"] is None
+    assert out["brand"] is None
     # taste is filtered to in-vocab values only
     assert out["taste"] == ["甜"]
     # 3 rejections: category, merchant, taste["外星味道"]
@@ -136,7 +136,7 @@ def test_enrich_no_rejection_when_all_in_vocab():
         def complete(self, prompt, *, temperature=0.7, item_id=""):
             return {
                 "category": "咖啡",
-                "merchant": "星巴克",
+                "brand": "星巴克",
                 "avg_prc": "30-50",
                 "age": "25-35",
                 "occasion": "下午茶",
@@ -162,7 +162,7 @@ def test_enrich_uses_name_hint_when_llm_returns_none(caplog):
         def complete(self, prompt, *, temperature=0.7, item_id=""):
             return {
                 "category": "咖啡",
-                "merchant": None,  # LLM declines to fill
+                "brand": None,  # LLM declines to fill
                 "avg_prc": "30-50",
                 "age": "25-35",
                 "occasion": "下午茶",
@@ -179,9 +179,9 @@ def test_enrich_uses_name_hint_when_llm_returns_none(caplog):
     )
 
     # merchant filled by name hint, not None
-    assert out["merchant"] == "星巴克"
+    assert out["brand"] == "星巴克"
     assert enricher.inferred_used_count == 1
-    assert any(r["dim"] == "merchant" for r in enricher.inferred_log)
+    assert any(r["dim"] == "brand" for r in enricher.inferred_log)
     # structured log emitted
     name_hint_logs = [r for r in caplog.records if r.getMessage() == "name_hint_used"]
     assert len(name_hint_logs) == 1
@@ -194,7 +194,7 @@ def test_enrich_no_name_fallback_for_rule_text_name():
         def complete(self, prompt, *, temperature=0.7, item_id=""):
             return {
                 "category": None,
-                "merchant": None,
+                "brand": None,
                 "avg_prc": None,
                 "age": None,
                 "occasion": None,
@@ -222,7 +222,7 @@ def test_enrich_prompt_includes_name_hints_block():
             captured["prompt"] = prompt
             return {
                 "category": "咖啡",
-                "merchant": "星巴克",
+                "brand": "星巴克",
                 "avg_prc": None,
                 "age": None,
                 "occasion": None,
@@ -248,7 +248,7 @@ def test_enrich_rejection_log_capped_at_1000():
         def complete(self, prompt, *, temperature=0.7, item_id=""):
             return {
                 "category": "外星品类",  # always rejected
-                "merchant": "瑞幸",
+                "brand": "瑞幸",
                 "avg_prc": "30-50",
                 "age": "25-35",
                 "occasion": "下午茶",

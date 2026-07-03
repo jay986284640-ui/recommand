@@ -1,0 +1,322 @@
+{
+  "brand": [
+    {
+      "value": "正韩·韩式料理（上大店）",
+      "frequency": 1,
+      "sources": [
+        "meituan_shop"
+      ]
+    },
+    {
+      "value": "牧白手作（上海金融街店）",
+      "frequency": 1,
+      "sources": [
+        "meituan_shop"
+      ]
+    },
+    {
+      "value": "28度海仙面-温州味道（金融街店）",
+      "frequency": 1,
+      "sources": [
+        "meituan_shop"
+      ]
+    },
+    {
+      "value": "甬江鲜·江浙菜家宴（金融街店）",
+      "frequency": 1,
+      "sources": [
+        "meituan_shop"
+      ]
+    },
+    {
+      "value": "瑞幸咖啡（金融街购物中心店）",
+      "frequency": 1,
+      "sources": [
+        "meituan_shop"
+      ]
+    },
+    {
+      "value": "霸王茶姬（金融街购物中心店）",
+      "frequency": 1,
+      "sources": [
+        "meituan_shop"
+      ]
+    },
+    {
+      "value": "醉辉皇（金融街购物中心店）",
+      "frequency": 1,
+      "sources": [
+        "meituan_shop"
+      ]
+    },
+    {
+      "value": "奈雪的茶（静安金融街融悦中心店）",
+      "frequency": 1,
+      "sources": [
+        "meituan_shop"
+      ]
+    },
+    {
+      "value": "汉堡王（金融街购物中心店）",
+      "frequency": 1,
+      "sources": [
+        "meituan_shop"
+      ]
+    },
+    {
+      "value": "牧白手作",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "瑞幸咖啡",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "霸王茶姬",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "奈雪的茶",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "汉堡王",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    }
+  ],
+  "category": [
+    {
+      "value": "饮品-茶饮果汁",
+      "frequency": 3,
+      "sources": [
+        "meituan_shop"
+      ]
+    },
+    {
+      "value": "奶茶",
+      "frequency": 3,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "快餐",
+      "frequency": 2,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "异域料理-韩式料理",
+      "frequency": 1,
+      "sources": [
+        "meituan_shop"
+      ]
+    },
+    {
+      "value": "小吃快餐-米粉面馆",
+      "frequency": 1,
+      "sources": [
+        "meituan_shop"
+      ]
+    },
+    {
+      "value": "地方菜系-江浙菜",
+      "frequency": 1,
+      "sources": [
+        "meituan_shop"
+      ]
+    },
+    {
+      "value": "饮品-咖啡",
+      "frequency": 1,
+      "sources": [
+        "meituan_shop"
+      ]
+    },
+    {
+      "value": "地方菜系-粤菜",
+      "frequency": 1,
+      "sources": [
+        "meituan_shop"
+      ]
+    },
+    {
+      "value": "小吃快餐-西式快餐",
+      "frequency": 1,
+      "sources": [
+        "meituan_shop"
+      ]
+    },
+    {
+      "value": "江浙菜",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "咖啡",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "韩式料理",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "粤菜",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    }
+  ],
+  "consumable_type": [
+    {
+      "value": "food",
+      "frequency": 5,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "drink",
+      "frequency": 4,
+      "sources": [
+        "llm"
+      ]
+    }
+  ],
+  "cuisine": [
+    {
+      "value": "小吃",
+      "frequency": 4,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "西餐",
+      "frequency": 2,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "江浙菜",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "韩式料理",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "粤菜",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    }
+  ],
+  "occasion": [
+    {
+      "value": "下午茶",
+      "frequency": 4,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "聚餐",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "午餐",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    }
+  ],
+  "taste": [
+    {
+      "value": "甜",
+      "frequency": 4,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "酱香",
+      "frequency": 3,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "清淡",
+      "frequency": 2,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "鲜",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "苦",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "辣",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    },
+    {
+      "value": "烟熏",
+      "frequency": 1,
+      "sources": [
+        "llm"
+      ]
+    }
+  ]
+}

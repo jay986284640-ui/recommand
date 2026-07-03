@@ -1,12 +1,14 @@
 """Top-level CLI for training-data-synonym (per Constitution Principle II).
 
 Subcommands:
-  tables-meta  — SQL → tables_meta.json only
-  enrich       — Stage 1: Hive → item_tags.jsonl
-  sft          — Stage 2: item_tags → sft_corpus.jsonl
-  split        — sft_corpus → train/val/test (Phase 5)
-  verify       — summary.json → SC pass/fail report (Phase 5)
-  all          — full pipeline (enrich → sft → split → verify) (Phase 5)
+  tables-meta       — YAML tables → tables_meta.json
+  extract-tags      — Stage 1: LLM 自由推断 + 频次统计 → dim_dictionary_snapshot.yaml
+  enrich            — Stage 2: 字典约束标注 → item_tags.jsonl + item_profile.jsonl
+  sft               — Stage 3: item_tags → sft_corpus.jsonl
+  generate-synonyms — item_profile → synonyms_solr.txt (ES 检索)
+  split             — sft_corpus → train/val/test
+  verify            — summary.json → SC pass/fail report
+  all               — full pipeline: enrich → sft → split → verify
 """
 
 from __future__ import annotations
@@ -42,7 +44,7 @@ def _resolve_llm_settings(cfg: Config, args, stage: str) -> dict:
 
     Returns a kwargs dict suitable for :func:`build_llm_client`.
     """
-    llm_cfg = (cfg.pipeline.get("training_data_synonym") or {})
+    llm_cfg = cfg.pipeline.get("training_data_synonym") or {}
     llm_cfg = (llm_cfg.get(stage) or {}).get("llm") or {}
 
     # provider
@@ -139,6 +141,7 @@ def _build_hive_reader(args, configs_dir: Path):
         )
     if args.source == "hive":
         from ..hive_reader.spark_reader import SparkHiveReader
+
         return SparkHiveReader(
             catalog=getattr(args, "spark_catalog", "spark_catalog"),
             hive_metastore_uri=getattr(args, "hive_metastore_uri", None),
@@ -146,6 +149,7 @@ def _build_hive_reader(args, configs_dir: Path):
         )
     if args.source == "csv":
         from ..hive_reader.csv_reader import CsvReader
+
         csv_dir = getattr(args, "csv_dir", None) or "tests/fixtures/csv"
         delimiter = getattr(args, "csv_delimiter", None) or ","
         return CsvReader(csv_dir=csv_dir, delimiter=delimiter)
@@ -154,6 +158,7 @@ def _build_hive_reader(args, configs_dir: Path):
 
 def cmd_tables_meta(args) -> int:
     from ..common.tables_config import load_tables_config
+
     tables = load_tables_config(args.tables_config)
     out = args.output
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -173,152 +178,176 @@ def cmd_tables_meta(args) -> int:
     return 0
 
 
-def cmd_enrich(args) -> int:
-    """Stage 2: 实际标注数据 (用 Stage1 字典约束 LLM,给 Hive 数据打 8 维标签).
+# ---------------------------------------------------------------------------
+# Shared enrichment runner — used by both Stage 1 (free-form) and Stage 2 (constrained)
+# ---------------------------------------------------------------------------
 
-    Accepts ``--dict-snapshot`` from Stage 1 extract-tags output.
-    If not provided, falls back to ``configs/dim_dictionary.yaml``.
-    After enrichment, auto-exports ``dim_dictionary_snapshot.yaml``
-    in the output directory (the actual values the LLM produced).
+def _resolve_tables_config_kwarg(args) -> tuple[str, str]:
+    """Return (keyword, value) for the tables-config argument passed to pipelines."""
+    tables_cfg = getattr(args, "tables_config", None)
+    sql_path = getattr(args, "sql", None)
+    if tables_cfg and (tables_cfg != "configs/tables.yaml" or sql_path is None):
+        return "tables_config_path", tables_cfg
+    if sql_path:
+        return "sql_path", sql_path
+    return "tables_config_path", tables_cfg or "configs/tables.yaml"
+
+
+def _run_enrichment(
+    args,
+    *,
+    constrain_to_dict: bool,
+    dict_snapshot_path: str | None = None,
+    stage_label: str = "enrich",
+) -> dict:
+    """Run EnrichmentPipeline and return the summary dict.
+
+    Args:
+        args: parsed CLI namespace (must have the standard enrich-related attrs).
+        constrain_to_dict: ``False`` for Stage 1 free-form, ``True`` for Stage 2
+            dictionary-constrained mode.
+        dict_snapshot_path: optional path to a Stage 1 snapshot YAML whose values
+            constrain the LLM output (Stage 2 mode).
+        stage_label: human-readable label for log/progress messages.
+
+    Returns the ``EnrichmentPipeline`` summary object (a dataclass with
+    ``items_enriched``, ``coverage_avg``, ``dict_rejected_count``, ``sc_pass``,
+    and ``__dict__`` for JSON serialisation).
     """
     cfg = Config.load(args.configs_dir)
     hive = _build_hive_reader(args, Path(args.configs_dir))
     settings = _resolve_llm_settings(cfg, args, "enrichment")
     llm: LLMClient = build_llm_client(**settings)
 
-    # --dict-snapshot: if provided, override dim_dictionary in Config
-    dict_snapshot_path = getattr(args, "dict_snapshot", None)
     if dict_snapshot_path:
         import yaml
-        cfg.dim_dictionary = yaml.safe_load(
-            Path(dict_snapshot_path).read_text(encoding="utf-8")
-        ) or {}
-        print(f"Stage 2: using dict snapshot from {dict_snapshot_path}")
 
-    # Prefer --tables-config; fall back to --sql (legacy, parses DDL).
-    tables_cfg = getattr(args, "tables_config", None)
-    sql_path = getattr(args, "sql", None)
-    pipeline_kwargs: dict = dict(
+        cfg.dim_dictionary = (
+            yaml.safe_load(Path(dict_snapshot_path).read_text(encoding="utf-8")) or {}
+        )
+        print(f"{stage_label}: using dict snapshot from {dict_snapshot_path}")
+
+    sample_n = getattr(args, "n_items_per_type", None) or None
+    kw, val = _resolve_tables_config_kwarg(args)
+    print(f"{stage_label}: building EnrichmentPipeline "
+          f"(constrain_to_dict={constrain_to_dict}, llm={llm.model_name}, "
+          f"sample_n={sample_n})")
+    pipeline = EnrichmentPipeline(
         config=cfg,
         hive_reader=hive,
         llm_client=llm,
         output_dir=args.output_dir,
-        constrain_to_dict=getattr(args, "constrain_to_dict", True),
+        constrain_to_dict=constrain_to_dict,
+        sample_n_per_type=sample_n,
+        **{kw: val},
     )
-    if tables_cfg and (tables_cfg != "configs/tables.yaml" or sql_path is None):
-        pipeline_kwargs["tables_config_path"] = tables_cfg
-    elif sql_path:
-        pipeline_kwargs["sql_path"] = sql_path
-    else:
-        pipeline_kwargs["tables_config_path"] = tables_cfg or "configs/tables.yaml"
-    pipeline = EnrichmentPipeline(**pipeline_kwargs)
-    summary = pipeline.run()
-    # Write summary.json
-    summary_path = Path(args.output_dir) / "summary.json"
-    summary_path.write_text(
-        json.dumps(summary.__dict__, ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
+    print(f"{stage_label}: running enrichment pipeline...")
+    return pipeline.run()
+
+
+# ---------------------------------------------------------------------------
+# Stage 2: enrich — 字典约束标注
+# ---------------------------------------------------------------------------
+
+def cmd_enrich(args) -> int:
+    """Stage 2: 字典约束标注 → item_tags.jsonl + item_profile.jsonl.
+
+    Requires ``--dict-snapshot`` from Stage 1 (or falls back to
+    ``configs/dim_dictionary.yaml``).
+    """
+    summary = _run_enrichment(
+        args,
+        constrain_to_dict=True,
+        dict_snapshot_path=getattr(args, "dict_snapshot", None),
+        stage_label="Stage 2",
     )
+
     print(f"=== Stage 2: enrich complete ===")
     print(f"  {summary.items_enriched} items, coverage_avg={summary.coverage_avg:.2f}")
     print(f"  dict_rejected={summary.dict_rejected_count}, SC pass: {summary.sc_pass}")
-    print(f"  summary → {summary_path}")
-
-    # Auto-export dim_dictionary_snapshot.yaml (Stage 2 → Stage 3 bridge)
-    _export_dim_snapshot(args.output_dir)
-    print(f"Next: Stage 3 sft --input {args.output_dir}/item_tags.jsonl")
+    print(f"  Products: {args.output_dir}/")
+    print(f"    item_profile.jsonl")
+    print(f"Next: Stage 3 sft --input {args.output_dir}/item_profile.jsonl")
     return 0 if all(summary.sc_pass.values()) else 1
 
 
-def _export_dim_snapshot(output_dir: str) -> None:
-    """Export dim_dictionary_snapshot.yaml from item_tags.jsonl."""
-    import yaml
-    from collections import Counter
-
-    item_tags = Path(output_dir) / "item_tags.jsonl"
-    if not item_tags.exists():
-        return
-
-    FIELDS = ["category", "consumable_type", "merchant", "avg_prc", "distance", "age", "occasion", "taste"]
-    counters = {f: Counter() for f in FIELDS}
-    for line in item_tags.open(encoding="utf-8"):
-        r = json.loads(line)
-        t = r.get("tags", {})
-        for f in FIELDS:
-            v = t.get(f)
-            if v is None: continue
-            if isinstance(v, list):
-                for x in v: counters[f][x] += 1
-            else:
-                counters[f][v] += 1
-
-    snapshot = {"_meta": {"version": "2.5-stage2-snapshot", "source": str(item_tags)}}
-    for f in FIELDS:
-        actual = [k for k, _ in counters[f].most_common()]
-        snapshot[f] = {
-            "desc": f"Stage 1 extracted {f} values ({len(actual)} unique)",
-            "op": "in",
-            "values": actual,
-        }
-
-    snap_path = Path(output_dir) / "dim_dictionary_snapshot.yaml"
-    snap_path.write_text(
-        yaml.dump(snapshot, allow_unicode=True, default_flow_style=False, sort_keys=False),
-        encoding="utf-8",
-    )
-    print(f"  snapshot → {snap_path}")
-
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Stage 1: extract-tags — 全量标签抽取 (LLM 自由推断 + 品牌/分类频次)
+# ---------------------------------------------------------------------------
 
 def _extract_tags_impl(args) -> int:
-    """Stage 1: 全量标签抽取(brand/category/taste/occasion).
+    """Stage 1: 全量标签抽取 → dim_dictionary_snapshot.yaml.
 
     Two-phase:
-      1. Lightweight LLM enrich on a small sample → get taste/occasion dict
-      2. Raw Hive frequency extraction for brand/category
-    Merges both into dim_dictionary_snapshot.yaml.
+      1. LLM free-form enrich on a small sample (constrain_to_dict=False).
+      2. Raw frequency extraction for brand/category from the full dataset.
+
+    Merges both into the output directory as:
+      - item_tags.jsonl (Phase 1 LLM results on the sample)
+      - brands_diff.yaml + categories_diff.yaml (Phase 2 frequency stats)
+      - dim_dictionary_snapshot.yaml (combined constraint set for Stage 2)
     """
     from .extract_dictionary import extract
 
-    tables_cfg = getattr(args, "tables_config", None)
-    sql_path = getattr(args, "sql", None)
-    if tables_cfg and (tables_cfg != "configs/tables.yaml" or sql_path is None):
-        kw = "tables_config_path"
-        val = tables_cfg
-    elif sql_path:
-        kw = "sql_path"
-        val = sql_path
-    else:
-        kw = "tables_config_path"
-        val = tables_cfg or "configs/tables.yaml"
+    # ---- Phase 1: LLM free-form on a sample ----
 
-    # Phase 1: LLM enrich on small sample to get taste/occasion
     sample_n = min(getattr(args, "n_items_per_type", 20) or 20, 10)
-    print(f"=== Stage 1 Phase 1: LLM enrich (sample {sample_n}/type) ===")
-    # We run as a sub-enrich — reuse cmd_enrich logic directly
-    enrich_args = argparse.Namespace(
-        configs_dir=args.configs_dir,
-        tables_config=args.tables_config,
-        sql=getattr(args, "sql", None),
-        source=args.source,
-        fixture_dir=args.fixture_dir,
-        output_dir=args.output_dir,
-        n_items_per_type=sample_n,
-        seed=getattr(args, "seed", 42),
-        provider=getattr(args, "provider", None),
-        api_key=getattr(args, "api_key", None),
-        base_url=getattr(args, "base_url", None),
-        max_tokens=getattr(args, "max_tokens", None),
-        log_level=getattr(args, "log_level", "WARNING"),
-        hive_metastore_uri=getattr(args, "hive_metastore_uri", None),
-        warehouse_dir=getattr(args, "warehouse_dir", None),
-        spark_catalog=getattr(args, "spark_catalog", "spark_catalog"),
-        dict_snapshot=None,
-        constrain_to_dict=False,   # Stage 1: 发散,不约束
-    )
-    rc_enrich = cmd_enrich(enrich_args)
+    print(f"=== Stage 1 Phase 1: LLM free-form enrich (sample {sample_n}/type) ===")
 
-    # Phase 2: Raw Hive frequency extraction for brand/category
-    print(f"\n=== Stage 1 Phase 2: brand/category frequency extraction ===")
+    # Temporarily override n_items_per_type for sampling (the shared runner
+    # reads it from args).  Restore after the call so Phase 2 sees the original.
+    saved_n = getattr(args, "n_items_per_type", None)
+    args.n_items_per_type = sample_n
+
+    summary = _run_enrichment(
+        args,
+        constrain_to_dict=False,
+        dict_snapshot_path=None,
+        stage_label="Stage 1",
+    )
+
+    if saved_n is not None:
+        args.n_items_per_type = saved_n
+    else:
+        del args.n_items_per_type
+
+    # Write LLM stats (success/failure counts, token usage, etc.)
+    out_dir = Path(args.output_dir)
+    llm_stats = {
+        "items_processed": summary.items_processed,
+        "items_enriched": summary.items_enriched,
+        "items_cold_start": summary.items_cold_start,
+        "llm_calls": summary.llm_calls,
+        "llm_failures": summary.llm_failures,
+        "dict_pass_rate": summary.dict_pass_rate,
+        "coverage_avg": summary.coverage_avg,
+        "dict_rejected_count": summary.dict_rejected_count,
+        "started_at": summary.started_at,
+        "finished_at": summary.finished_at,
+    }
+    (out_dir / "llm_stats.json").write_text(
+        json.dumps(llm_stats, ensure_ascii=False, indent=2, default=str),
+        encoding="utf-8",
+    )
+    phase1_ok = all(summary.sc_pass.values())
+
+    # ---- Phase 2: dictionary extraction ----
+
+    print(f"\n=== Stage 1 Phase 2: dictionary extraction ===")
+
+    # Read item_types from pipeline config so Phase 2 only queries tables
+    # the user actually has data for (instead of requiring all 3 roles).
+    cfg = Config.load(args.configs_dir)
+    input_cfg = (cfg.pipeline.get("training_data_synonym") or {}).get("input") or {}
+    item_types = input_cfg.get("item_types")  # None → all tables
+
+    # Phase 1 wrote item_tags.jsonl → feed the LLM tags into Phase 2 so
+    # taste / cuisine / occasion / consumable_type also get aggregated,
+    # normalized, frequency-filtered, and diffed.
+    item_tags_path = str(out_dir / "item_tags.jsonl")
+
+    kw, val = _resolve_tables_config_kwarg(args)
     stats = extract(
         source=args.source,
         fixture_dir=args.fixture_dir,
@@ -328,36 +357,74 @@ def _extract_tags_impl(args) -> int:
         frequency_min=args.frequency_min,
         levenshtein_threshold=args.levenshtein_threshold,
         jaccard_threshold=args.jaccard_threshold,
-        sample_n_per_type=args.n_items_per_type,
+        sample_n_per_type=getattr(args, "n_items_per_type", None),
         hive_metastore_uri=getattr(args, "hive_metastore_uri", None),
         warehouse_dir=getattr(args, "warehouse_dir", None),
+        csv_dir=getattr(args, "csv_dir", None) or "tests/fixtures/csv",
+        csv_delimiter=getattr(args, "csv_delimiter", None) or ",",
+        item_types=item_types,
+        item_tags_path=item_tags_path,
     )
 
+    # ---- Cleanup: remove intermediate files ----
+
+    cleanup_files = [
+        "item_tags.jsonl",
+        "tag_enrichment_state.jsonl",
+        "tag_enrichment_failures.jsonl",
+        "cold_start_items.jsonl",
+        "tables_meta.json",
+        "summary.json",
+    ]
+    for fname in cleanup_files:
+        fp = out_dir / fname
+        if fp.exists():
+            fp.unlink()
+
+    # ---- Done ----
+
     print(f"\n=== Stage 1: extract-tags complete ===")
-    print(f"  Phase 1 (LLM enrich):  {'OK' if rc_enrich == 0 else 'failed'}")
-    print(f"  Phase 2 (brand freq):   {stats['raw_brands']} raw → {stats['normalized_brands']} normalized → {stats['added_brands']} added")
+    print(f"  Phase 1 (LLM enrich):  {'OK' if phase1_ok else 'failed'}")
+    print(f"  Phase 2 (dictionary):")
+    # Collect all dimension names from stats dynamically
+    dim_names = sorted({
+        k.split("_", 1)[1] for k in stats
+        if k.startswith("raw_") and not k.endswith("s")
+    })
+    for dim in dim_names:
+        raw = stats.get(f"raw_{dim}", 0)
+        norm = stats.get(f"normalized_{dim}", 0)
+        added = stats.get(f"added_{dim}", 0)
+        print(f"    {dim:20s}  {raw:>4} raw → {norm:>4} normalized → {added:>4} added")
     print(f"  Products: {args.output_dir}/")
-    print(f"    brands_diff.yaml (brand review)")
+    print(f"    item_profile.jsonl           (enriched item profiles)")
     print(f"    dim_dictionary_snapshot.yaml (→ Stage 2 constraint)")
-    print(f"Next: Stage 2 enrich --dict-snapshot {args.output_dir}/dim_dictionary_snapshot.yaml")
+    print(f"    raw_tags.json                (all tags before aggregation)")
+    print(f"    llm_stats.json               (LLM call success/failure stats)")
+    print(
+        f"Next: Stage 2 enrich --dict-snapshot {args.output_dir}/dim_dictionary_snapshot.yaml"
+    )
     return 0
 
 
-# Stage 1: 全量标签抽取
+# Public names bound in build_parser()
 cmd_extract_tags = _extract_tags_impl
-
-# Legacy alias
-cmd_extract_dictionary = _extract_tags_impl
+cmd_extract_dictionary = _extract_tags_impl  # legacy alias
 
 
 def cmd_generate_synonyms(args) -> int:
     """Generate synonyms_solr.txt from Stage 2 item_profile.jsonl."""
     from ..synonym.builder import build_synonyms
+
     profile = Path(getattr(args, "input", None) or "test_output/item_profile.jsonl")
     if not profile.exists():
         print(f"ERROR: item_profile.jsonl not found: {profile}", file=sys.stderr)
         return 2
-    brand_dict = Path(args.brand_dict) if getattr(args, "brand_dict", None) else Path(args.configs_dir) / "brand_dictionary.yaml"
+    brand_dict = (
+        Path(args.brand_dict)
+        if getattr(args, "brand_dict", None)
+        else Path(args.configs_dir) / "brand_dictionary.yaml"
+    )
     build_synonyms(
         profile_path=profile,
         brand_dict_path=brand_dict,
@@ -371,6 +438,7 @@ def cmd_sft(args) -> int:
     settings = _resolve_llm_settings(cfg, args, "sft")
     llm = build_llm_client(**settings)
     from ..sft.pipeline import SFTPipeline
+
     pipeline = SFTPipeline(
         config=cfg,
         llm_client=llm,
@@ -381,9 +449,11 @@ def cmd_sft(args) -> int:
         negative_ratio=getattr(args, "negative_ratio", 0.10),
     )
     summary = pipeline.run()
-    print(f"Stage 2 complete: {summary.total} samples, "
-          f"{summary.sft_failures} failures, "
-          f"{summary.forced_coverage_count} forced_coverage")
+    print(
+        f"Stage 2 complete: {summary.total} samples, "
+        f"{summary.sft_failures} failures, "
+        f"{summary.forced_coverage_count} forced_coverage"
+    )
     print(f"  intent_distribution: {summary.intent_distribution}")
     print(f"  coverage_pass: {summary.coverage_pass}")
     return 0 if (summary.coverage_pass and summary.sft_failures == 0) else 1
@@ -407,9 +477,7 @@ def cmd_split(args) -> int:
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    in_path = (
-        Path(args.input) if args.input else out_dir / "sft_corpus.jsonl"
-    )
+    in_path = Path(args.input) if args.input else out_dir / "sft_corpus.jsonl"
     if not in_path.exists():
         print(f"ERROR: input not found: {in_path}", file=sys.stderr)
         return 2
@@ -606,12 +674,6 @@ def cmd_all(args) -> int:
         output_dir=out_dir,
     )
     enrich_summary = enrich.run()
-    summary_path = out_dir / "summary.json"
-    summary_path.write_text(
-        json.dumps(enrich_summary.__dict__, ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
-    )
-    _export_dim_snapshot(str(out_dir))
     if not all(enrich_summary.sc_pass.values()):
         print("Stage 2 (enrich) failed SC self-check; aborting.", file=sys.stderr)
         return 1
@@ -635,6 +697,7 @@ def cmd_all(args) -> int:
     # split → verify
     print("\n=== split ===")
     import argparse
+
     split_args = argparse.Namespace(
         configs_dir=args.configs_dir,
         tables_config=args.tables_config,
@@ -713,7 +776,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="training-data-synonym",
         description="兴业 O2O 三品类 SFT 语料生成流水线\n"
-                    "Stage 1 extract-tags → Stage 2 enrich → Stage 3 sft → split → verify",
+        "Stage 1 extract-tags → Stage 2 enrich → Stage 3 sft → split → verify",
         parents=[parent],
     )
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -724,7 +787,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_tables_meta)
 
     # Stage 1: extract-tags (全量标签抽取)
-    sp = sub.add_parser("extract-tags", help="Stage 1: 全量标签抽取 → dim_dictionary_snapshot.yaml", parents=[parent])
+    sp = sub.add_parser(
+        "extract-tags",
+        help="Stage 1: 全量标签抽取 → dim_dictionary_snapshot.yaml",
+        parents=[parent],
+    )
     sp.add_argument("--source", choices=["hive", "mock", "csv"], default="mock")
     sp.add_argument("--fixture-dir", default="tests/fixtures/hive")
     sp.add_argument("--output-dir", default="dict_candidates")
@@ -732,25 +799,37 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--levenshtein-threshold", type=int, default=3)
     sp.add_argument("--jaccard-threshold", type=float, default=0.6)
     sp.add_argument("--n-items-per-type", type=int, default=None)
+    sp.add_argument(
+        "--csv-dir", default="tests/fixtures/csv", help="CSV reader directory (for --source csv)"
+    )
+    sp.add_argument("--csv-delimiter", default=",", help="CSV field delimiter (e.g. ',' '\\t' '|')")
     sp.set_defaults(func=cmd_extract_tags)
 
     # Stage 2: enrich (实际标注数据)
-    sp = sub.add_parser("enrich", help="Stage 2: 实际标注数据 (Hive → item_tags.jsonl)", parents=[parent])
+    sp = sub.add_parser(
+        "enrich", help="Stage 2: 实际标注数据 (Hive → item_tags.jsonl)", parents=[parent]
+    )
     sp.add_argument("--source", choices=["hive", "mock", "csv"], default="mock")
     sp.add_argument("--fixture-dir", default="tests/fixtures/hive")
     sp.add_argument("--n-items-per-type", type=int, default=100)
     sp.add_argument("--output-dir", type=Path, default=Path("./out"))
     sp.add_argument("--seed", type=int, default=42)
-    sp.add_argument("--csv-dir", default="tests/fixtures/csv",
-                    help="CSV reader directory (for --source csv)")
-    sp.add_argument("--csv-delimiter", default=",",
-                    help="CSV field delimiter (e.g. ',' '\\t' '|')")
-    sp.add_argument("--dict-snapshot", type=Path, default=None,
-                    help="Stage 1 snapshot YAML (constrains LLM output)")
+    sp.add_argument(
+        "--csv-dir", default="tests/fixtures/csv", help="CSV reader directory (for --source csv)"
+    )
+    sp.add_argument("--csv-delimiter", default=",", help="CSV field delimiter (e.g. ',' '\\t' '|')")
+    sp.add_argument(
+        "--dict-snapshot",
+        type=Path,
+        default=None,
+        help="Stage 1 snapshot YAML (constrains LLM output)",
+    )
     sp.set_defaults(func=cmd_enrich)
 
     # Stage 3: sft (合成 SFT 数据)
-    sp = sub.add_parser("sft", help="Stage 3: 合成 SFT 数据 (item_tags → sft_corpus.jsonl)", parents=[parent])
+    sp = sub.add_parser(
+        "sft", help="Stage 3: 合成 SFT 数据 (item_tags → sft_corpus.jsonl)", parents=[parent]
+    )
     sp.add_argument("--input", type=Path, required=True, help="item_tags.jsonl from Stage 1")
     sp.add_argument("--output-dir", type=Path, default=Path("./out_sft"))
     sp.add_argument("--count-per-item", type=int, default=8)
@@ -772,21 +851,43 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--levenshtein-threshold", type=int, default=3)
     sp.add_argument("--jaccard-threshold", type=float, default=0.6)
     sp.add_argument("--n-items-per-type", type=int, default=None)
+    sp.add_argument(
+        "--csv-dir", default="tests/fixtures/csv", help="CSV reader directory (for --source csv)"
+    )
+    sp.add_argument("--csv-delimiter", default=",", help="CSV field delimiter (e.g. ',' '\\t' '|')")
     sp.set_defaults(func=cmd_extract_dictionary)
-    sp = sub.add_parser("split", help="Split SFT corpus into train/val/test (80/10/10 by item_id md5)", parents=[parent])
-    sp.add_argument("--input", type=Path, default=None,
-                    help="SFT corpus jsonl; default <output-dir>/sft_corpus.jsonl")
+    sp = sub.add_parser(
+        "split",
+        help="Split SFT corpus into train/val/test (80/10/10 by item_id md5)",
+        parents=[parent],
+    )
+    sp.add_argument(
+        "--input",
+        type=Path,
+        default=None,
+        help="SFT corpus jsonl; default <output-dir>/sft_corpus.jsonl",
+    )
     sp.add_argument("--output-dir", type=Path, default=Path("./out_split"))
     sp.set_defaults(func=cmd_split)
-    sp = sub.add_parser("generate-synonyms", help="Stage 2 item_profile → synonyms_solr.txt (ES retrieval)", parents=[parent])
+    sp = sub.add_parser(
+        "generate-synonyms",
+        help="Stage 2 item_profile → synonyms_solr.txt (ES retrieval)",
+        parents=[parent],
+    )
     sp.add_argument("--input", type=Path, default=None, help="item_profile.jsonl path")
-    sp.add_argument("--output-dir", type=Path, default=None, help="output dir for synonyms_solr.txt")
+    sp.add_argument(
+        "--output-dir", type=Path, default=None, help="output dir for synonyms_solr.txt"
+    )
     sp.add_argument("--brand-dict", type=Path, default=None, help="brand_dictionary.yaml path")
     sp.set_defaults(func=cmd_generate_synonyms)
-    sp = sub.add_parser("verify", help="SC self-check (Stage 1 + Stage 2 + splits)", parents=[parent])
+    sp = sub.add_parser(
+        "verify", help="SC self-check (Stage 1 + Stage 2 + splits)", parents=[parent]
+    )
     sp.add_argument("--output-dir", type=Path, default=Path("./out"))
     sp.set_defaults(func=cmd_verify)
-    sp = sub.add_parser("all", help="Full pipeline: enrich → sft → split → verify", parents=[parent])
+    sp = sub.add_parser(
+        "all", help="Full pipeline: enrich → sft → split → verify", parents=[parent]
+    )
     sp.add_argument("--source", choices=["hive", "mock", "csv"], default="mock")
     sp.add_argument("--fixture-dir", default="tests/fixtures/hive")
     sp.add_argument("--output-dir", type=Path, default=Path("./out_all"))

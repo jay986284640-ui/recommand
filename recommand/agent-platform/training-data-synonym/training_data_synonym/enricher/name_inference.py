@@ -8,7 +8,7 @@ product description, we fall back to substring matching the product's
 Usage::
 
     hints = compute_name_hints(raw, dim_dict, brand_values)
-    # hints = {"merchant": "星巴克", "category": "咖啡", "occasion": "下午茶", "taste": ["甜"]}
+    # hints = {"brand": "星巴克", "category": "咖啡", "occasion": "下午茶", "taste": ["甜"]}
 
 The heuristics are deliberately conservative: rule-text names produce empty
 hints (no spurious brand inference from a discount description). When the
@@ -80,7 +80,7 @@ def _longest_substring_match(name: str, candidates: list[str]) -> Optional[str]:
 
 
 def infer_brand(name: str, brand_values: list[str]) -> Optional[str]:
-    """Infer merchant / brand from product name via longest substring match."""
+    """Infer brand from product name via longest substring match."""
     if is_rule_text(name):
         return None
     return _longest_substring_match(name, brand_values)
@@ -112,7 +112,7 @@ def compute_name_hints(
 ) -> dict:
     """Compute inferred hints for one raw record.
 
-    Returns a dict with keys from ``{"merchant", "category", "taste",
+    Returns a dict with keys from ``{"brand", "category", "taste",
     "occasion"}`` and values either a string, list, or ``None`` (no hint
     inferred). Empty / rule-text names produce an empty dict.
     """
@@ -120,7 +120,7 @@ def compute_name_hints(
     if not name or is_rule_text(name):
         return {}
     return {
-        "merchant": infer_brand(name, brand_values),
+        "brand": infer_brand(name, brand_values),
         "category": infer_category(
             name, dim_dict.get("category", {}).get("values", [])
         ),

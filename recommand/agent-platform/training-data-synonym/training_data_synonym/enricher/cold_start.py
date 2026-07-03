@@ -14,10 +14,8 @@ from ..data_model import ItemTags
 
 def is_cold_start(item: ItemTags) -> bool:
     """True if every dim in ItemTags.tags is None (per DIM_ORDER)."""
-    return all(item.tags.get(d) is None for d in (
-        "category", "consumable_type", "merchant", "avg_prc", "distance",
-        "age", "occasion", "taste",
-    ))
+    from ..data_model import DIM_ORDER
+    return all(item.tags.get(d) is None for d in DIM_ORDER if d != "distance")
 
 
 class ColdStartWriter:

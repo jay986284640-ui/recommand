@@ -51,19 +51,14 @@ def test_sensitive_columns_dropped(reader, sql_tables):
 
 
 def test_item_id_namespace_isolation(reader, sql_tables):
-    """mt-, self-, cpn- prefixes must not collide."""
+    """Item IDs must be unique and non-empty across all core tables."""
     seen_ids = set()
     core_roles = {Role.MEITUAN_SHOP, Role.SELF_SHOP, Role.COUPON}
     for tm in [t for t in sql_tables if t.inferred_role in core_roles]:
         for rec in reader.read(tm, HiveReadSpec(sample_n_per_type=20)):
+            assert rec.item_id, f"empty item_id for {tm.table_name}"
             assert rec.item_id not in seen_ids, f"duplicate id {rec.item_id}"
             seen_ids.add(rec.item_id)
-            if rec.item_type == Role.MEITUAN_SHOP:
-                assert rec.item_id.startswith("mt-")
-            elif rec.item_type == Role.SELF_SHOP:
-                assert rec.item_id.startswith("self-")
-            elif rec.item_type == Role.COUPON:
-                assert rec.item_id.startswith("cpn-")
 
 
 def test_geo_extraction_meituan(reader, sql_tables):

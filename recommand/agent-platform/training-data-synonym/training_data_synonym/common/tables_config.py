@@ -1,11 +1,8 @@
-"""YAML table-config loader (replaces SQL DDL parsing).
+"""YAML table-config loader (v1.4 — simplified).
 
-Per spec v2.5: ``configs/tables.yaml`` declares db / name / role / columns / data type
-/ sensitive flags + a **field contract** (``_meta.field_contract``) that says which
-``role:`` annotations each role must provide. :func:`load_tables_config` validates
-the YAML and returns a list of :class:`~training_data_synonym.data_model.TableMeta`
-— the same dataclass that :mod:`training_data_synonym.sql_parser` previously
-produced. Downstream code (MockHiveReader, EnrichmentPipeline) is unchanged.
+Per spec v2.5: ``configs/tables.yaml`` declares db / name / role / item_id /
+columns (name + type) / sensitive flags.  :func:`load_tables_config` validates
+the YAML and returns a list of :class:`~training_data_synonym.data_model.TableMeta`.
 """
 
 from __future__ import annotations
@@ -40,8 +37,6 @@ def load_tables_config(path: str | Path) -> list[TableMeta]:
       - each table has unique ``(db, name)``
       - ``role`` ∈ :class:`Role` enum
       - ``columns`` is a non-empty list of ``{name, type}`` with both fields set
-      - ``_meta.field_contract`` (if present): every table's columns must cover
-        the contract's ``required`` roles for that table's role.
 
     Raises:
         TablesConfigError: on any validation failure.
@@ -59,10 +54,6 @@ def load_tables_config(path: str | Path) -> list[TableMeta]:
         raise TablesConfigError(
             f"tables config must contain non-empty 'tables' list: {p}"
         )
-
-    contract = (
-        (data.get("_meta") or {}).get("field_contract") or {}
-    )
 
     valid_roles = {r.value for r in Role}
     seen: set[tuple[str, str]] = set()
@@ -92,6 +83,8 @@ def load_tables_config(path: str | Path) -> list[TableMeta]:
                 f"must be one of {sorted(valid_roles)}"
             )
 
+        item_id = str(t.get("item_id") or "").strip().lower()
+
         cols_raw = t.get("columns") or []
         if not isinstance(cols_raw, list) or not cols_raw:
             raise TablesConfigError(
@@ -99,7 +92,6 @@ def load_tables_config(path: str | Path) -> list[TableMeta]:
             )
 
         columns: list[ColumnMeta] = []
-        column_roles: list[str] = []  # parallel list of `role:` annotations
         for j, c in enumerate(cols_raw):
             if not isinstance(c, dict):
                 raise TablesConfigError(
@@ -111,13 +103,12 @@ def load_tables_config(path: str | Path) -> list[TableMeta]:
                 raise TablesConfigError(
                     f"table {db}.{name} column #{j} has empty name"
                 )
-            # v2.5.2: lowercase keys — MockHiveReader/SparkHiveReader both normalize
             if not col_type:
                 raise TablesConfigError(
                     f"table {db}.{name} column #{j} ({col_name}) has empty type"
                 )
             if col_type not in _VALID_TYPES:
-                # Don't fail on unknown types — Hive has many. Warn via doc only.
+                # Don't fail on unknown types — Hive has many.
                 pass
             columns.append(
                 ColumnMeta(
@@ -126,33 +117,12 @@ def load_tables_config(path: str | Path) -> list[TableMeta]:
                     comment=c.get("comment"),
                 )
             )
-            col_role = c.get("role")
-            if col_role is not None:
-                column_roles.append(str(col_role).strip())
 
         partition_keys = [
             str(k).strip().lower()
             for k in (t.get("partition_keys") or [])
             if str(k).strip()
         ]
-
-        # Field contract check (v2.5): every table's column_roles must include
-        # the contract's required roles for that table's role.
-        if contract:
-            required = (
-                (contract.get(role_str) or {}).get("required") or []
-            )
-            missing = [
-                r for r in required if r not in column_roles
-            ]
-            if missing:
-                raise TablesConfigError(
-                    f"table {db}.{name} (role={role_str}) is missing "
-                    f"required columns for field_contract: {missing}. "
-                    f"Got column roles: {column_roles}; "
-                    f"add the missing columns (with `role: <r>` annotation) "
-                    f"or update the fixture / upstream SQL view to provide them."
-                )
 
         out.append(
             TableMeta(
@@ -161,6 +131,7 @@ def load_tables_config(path: str | Path) -> list[TableMeta]:
                 columns=columns,
                 partition_keys=partition_keys,
                 inferred_role=Role(role_str),
+                item_id=item_id,
                 _format_version=TABLE_META_V,
             )
         )
@@ -177,17 +148,13 @@ def derive_sensitive_blocklist(
       1. Per-table top-level ``sensitive: [col_a, col_b]`` — preferred.
       2. Per-column ``sensitive: true`` flag — legacy, still honoured.
 
-    Returns a sorted, deduplicated list — the contract that
-    :class:`~training_data_synonym.data_model.HiveReadSpec.sensitive_columns_blocklist`
-    expects. We re-read the YAML rather than threading ``sensitive`` through
-    :class:`ColumnMeta` to keep the dataclass shape stable for any consumers
-    that already serialize it (item_tags.jsonl, sft_corpus.jsonl).
+    Returns a sorted, deduplicated list.
     """
     sens: set[str] = set()
     if raw_yaml is None:
         return []
     for t in raw_yaml.get("tables", []) or []:
-        # Source 1: top-level `sensitive: [list]` — keep original case
+        # Source 1: top-level `sensitive: [list]`
         for c in t.get("sensitive", []) or []:
             sens.add(str(c))
         # Source 2: per-column `sensitive: true` (legacy)

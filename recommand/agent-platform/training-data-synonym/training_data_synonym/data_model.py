@@ -60,6 +60,7 @@ class TableMeta:
     columns: list[ColumnMeta]
     partition_keys: list[str] = field(default_factory=list)
     inferred_role: Role = Role.UNKNOWN
+    item_id: str = ""       # primary-key column name (v1.4, replaces columns[*].role:id)
     _format_version: str = TABLE_META_V
 
 
@@ -109,10 +110,11 @@ class RawRecord:
 DIM_ORDER = (
     "category",
     "consumable_type",
-    "merchant",
+    "brand",
     "avg_prc",
     "distance",
     "age",
+    "cuisine",
     "occasion",
     "taste",
 )
@@ -121,10 +123,11 @@ DIM_ORDER = (
 TAG_SOURCE_ALLOWED: dict[str, set[str]] = {
     "category": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
     "consumable_type": {TagOrigin.DERIVED, TagOrigin.AI, TagOrigin.MISSING},
-    "merchant": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
+    "brand": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
     "avg_prc": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
     "distance": {TagOrigin.GEO, TagOrigin.MISSING},
     "age": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
+    "cuisine": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
     "occasion": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
     "taste": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
 }
@@ -134,10 +137,11 @@ TAG_SOURCE_ALLOWED: dict[str, set[str]] = {
 class TagSource:
     category: TagOrigin
     consumable_type: TagOrigin
-    merchant: TagOrigin
+    brand: TagOrigin
     avg_prc: TagOrigin
     distance: TagOrigin
     age: TagOrigin
+    cuisine: TagOrigin
     occasion: TagOrigin
     taste: TagOrigin
 
@@ -145,10 +149,11 @@ class TagSource:
         return {
             "category": self.category.value,
             "consumable_type": self.consumable_type.value,
-            "merchant": self.merchant.value,
+            "brand": self.brand.value,
             "avg_prc": self.avg_prc.value,
             "distance": self.distance.value,
             "age": self.age.value,
+            "cuisine": self.cuisine.value,
             "occasion": self.occasion.value,
             "taste": self.taste.value,
         }

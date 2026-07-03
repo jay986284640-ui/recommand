@@ -53,13 +53,13 @@ def test_plan_diverse_dims_covers_all():
     rng = random.Random(0)
     p = SamplePlanner(count_per_item=8, max_turns=5)
     item = _make_item({"category": "咖啡", "consumable_type": "drink",
-                       "merchant": "星巴克", "avg_prc": "30-50",
+                       "brand": "星巴克", "avg_prc": "30-50",
                        "age": "25-35", "occasion": "下午茶", "taste": ["甜"]})
     planned = p.plan_diverse_dims(item, n_samples=8, rng=rng)
     union = set()
     for per_sample in planned:
         union.update(per_sample)
-    target = {"category", "consumable_type", "merchant", "avg_prc", "age", "occasion", "taste"}
+    target = {"category", "consumable_type", "brand", "avg_prc", "age", "occasion", "taste"}
     assert target.issubset(union), f"missing: {target - union}"
 
 

@@ -1,19 +1,21 @@
-# 业务表字段契约 v1.3
+# 业务表字段契约 v1.4
 # 设计原则:
-#   1. 只声明 pipeline 真正读到的列 + sensitive 列
-#   2. 不做跨表 JOIN(由上游 SQL 视图解决)
-#   3. _meta.field_contract 声明每种 role 必须提供的字段
-#   4. _meta.llm_inference 声明 LLM 推断维度(新增维度只改这里)
-#   5. 每张表的 derived_fields 声明非 LLM 字段来源(单列映射)
+#   1. columns 声明表的完整列 schema（name + type），直接定义输出字段
+#   2. _meta.llm_inference 声明 LLM 推断维度（新增维度只改这里）
+#   3. item_id 声明主键列，sensitive 标记敏感列
+#   4. 非 llm_inference 的维度（如 avg_prc）自动从同名列取值
 
 _meta:
-  version: 1.3
+  version: 1.4
   spec_version: v2.5.2
   format: table_meta_v1
 
   llm_inference:
     - field: category
       desc: 根据门店名称和品类推断商品所属的品类,如咖啡、快餐、奶茶、火锅、便利店
+      multiple: false
+    - field: brand
+      desc: 推断推断门店的品牌,如星巴克、麦当劳、肯德基、喜茶
       multiple: false
     - field: taste
       desc: 根据门店类型和菜品特征推断口味标签(可多选),如甜、辣、清淡、酱香、烟熏
@@ -22,60 +24,48 @@ _meta:
       desc: 推断门店的菜系类型,如川菜、粤菜、日料、西餐、烧烤、小吃
       multiple: false
     - field: occasion
-      desc: 推断该门店适合的消费场景,如早餐、下午茶、聚会、外卖
+      desc: 推断该门店适合的消费场景,如早餐、下午茶、环境好、聚餐、亲子、约会、生日、节日
       multiple: false
     - field: consumable_type
       desc: 推断是吃的还是喝的,如food、drink、mixed
       multiple: false
 
-  field_contract:
-    meituan_shop:
-      required: [id, name, category, price, lng, lat]
-      optional: [alt_price, city, district]
-    self_shop:
-      required: [id, name, brand]
-      optional: [alt_price]
-    coupon:
-      required: [id, name, desc]
-      optional: [face]
-
 tables:
   - db: recommand_workspace
     name: o2o_new_gut_shop_base_third
     role: meituan_shop
+    item_id: str_id
     columns:
-      - { name: str_id,            type: VARCHAR,  role: id }
-      - { name: str_nm,            type: VARCHAR,  role: name }
-      - { name: cat_nm,            type: VARCHAR,  role: category }
-      - { name: avg_prc,           type: VARCHAR,  role: price }
-      - { name: mnt_pern_usr_num,  type: VARCHAR,  role: alt_price }
-      - { name: city_nm,           type: VARCHAR,  role: city }
-      - { name: cnty_nm,           type: VARCHAR,  role: district }
-      - { name: lng,               type: VARCHAR,  role: lng }
-      - { name: lat,               type: VARCHAR,  role: lat }
-    derived_fields:
-      avg_prc: avg_prc
+      - { name: str_id,            type: VARCHAR }
+      - { name: str_nm,            type: VARCHAR }
+      - { name: cat_nm,            type: VARCHAR }
+      - { name: avg_prc,           type: VARCHAR }
+      - { name: mnt_pern_usr_num,  type: VARCHAR }
+      - { name: city_nm,           type: VARCHAR }
+      - { name: cnty_nm,           type: VARCHAR }
+      - { name: lng,               type: VARCHAR }
+      - { name: lat,               type: VARCHAR }
     sensitive: [crt_psn_id, updt_psn_id]
 
   - db: recommand_workspace
     name: o2o_new_gut_shop_base
     role: self_shop
-    derived_fields:
-      avg_prc: mnt_pern_usr_num
+    item_id: shopid
     columns:
-      - { name: shopid,            type: VARCHAR,  role: id }
-      - { name: shopname,          type: VARCHAR,  role: name }
-      - { name: brnd_nm,           type: VARCHAR,  role: brand }
+      - { name: shopid,            type: VARCHAR }
+      - { name: shopname,          type: VARCHAR }
+      - { name: brnd_nm,           type: VARCHAR }
+      - { name: mnt_pern_usr_num,  type: VARCHAR }
     sensitive: [opr_psn_id]
 
   - db: recommand_workspace
     name: o2o_new_gut_coupon_template
     role: coupon
+    item_id: couponid
     columns:
-      - { name: couponid,           type: BIGINT,   role: id }
-      - { name: couponname,         type: VARCHAR,  role: name }
-      - { name: productdesc,        type: VARCHAR,  role: desc }
-      - { name: ruledescription,    type: VARCHAR,  role: desc }
-    derived_fields:
-      avg_prc: faceprice
+      - { name: couponid,           type: BIGINT }
+      - { name: couponname,         type: VARCHAR }
+      - { name: productdesc,        type: VARCHAR }
+      - { name: ruledescription,    type: VARCHAR }
+      - { name: faceprice,          type: VARCHAR }
     sensitive: [creator, updateperson]
