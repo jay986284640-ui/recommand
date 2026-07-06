@@ -8,3 +8,10 @@ __pycache__/
 .vscode/
 *.swp
 *.swo
+
+# 数据产出目录
+agent-platform/training-data-synonym/output/
+agent-platform/training-data-synonym/synonym-dictionary/output/
+
+# 原始数据文件
+knowledge_database/
