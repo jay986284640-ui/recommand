@@ -1,0 +1,21 @@
+{
+  "_format_version": "synonyms_v2",
+  "generated_at": "2026-07-06T07:48:26.887045+00:00",
+  "method": "llm",
+  "total_groups_assembled": 20,
+  "total_groups_written": 20,
+  "stats": {
+    "brand_terms": 0,
+    "brand_groups": 0,
+    "category_terms": 7,
+    "category_groups": 7,
+    "cuisine_terms": 3,
+    "cuisine_groups": 3,
+    "taste_terms": 10,
+    "taste_groups": 10,
+    "occasion_terms": 3,
+    "occasion_groups": 3,
+    "total_groups": 20,
+    "total_written": 20
+  }
+}

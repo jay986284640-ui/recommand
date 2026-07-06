@@ -115,6 +115,7 @@ DIM_ORDER = (
     "distance",
     "age",
     "cuisine",
+    "meal_time",
     "occasion",
     "taste",
 )
@@ -128,6 +129,7 @@ TAG_SOURCE_ALLOWED: dict[str, set[str]] = {
     "distance": {TagOrigin.GEO, TagOrigin.MISSING},
     "age": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
     "cuisine": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
+    "meal_time": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
     "occasion": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
     "taste": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
 }
@@ -142,6 +144,7 @@ class TagSource:
     distance: TagOrigin
     age: TagOrigin
     cuisine: TagOrigin
+    meal_time: TagOrigin
     occasion: TagOrigin
     taste: TagOrigin
 
@@ -154,6 +157,7 @@ class TagSource:
             "distance": self.distance.value,
             "age": self.age.value,
             "cuisine": self.cuisine.value,
+            "meal_time": self.meal_time.value,
             "occasion": self.occasion.value,
             "taste": self.taste.value,
         }
@@ -198,7 +202,8 @@ class SFTSample:
     item_type: Role
     intent: str
     messages: list[MessageTurn]
-    params: dict[str, Optional[Any]]  # 8 dims
+    params: dict[str, Optional[Any]]  # {field: [{"op":...,"values":[...]}] or null}
+    guide_text: str = ""
     order_by: Optional[str] = None
     negative: bool = False
     negative_type: Optional[str] = None
@@ -210,19 +215,19 @@ class SFTSample:
 
     def to_jsonl_dict(self) -> dict[str, Any]:
         return {
-            "item_id": self.item_id,
-            "item_type": self.item_type.value,
-            "intent": self.intent,
-            "messages": [{"role": m.role, "content": m.content} for m in self.messages],
+            "messages": [
+                {"role": m.role, "content": m.content} for m in self.messages
+            ],
             "params": {k: self.params.get(k) for k in DIM_ORDER},
-            "order_by": self.order_by,
-            "negative": self.negative,
-            "negative_type": self.negative_type,
-            "covered_dims": list(self.covered_dims),
-            "forced_coverage": self.forced_coverage,
-            "generated_at": self.generated_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "llm_model": self.llm_model,
+            "guide_text": self.guide_text,
             "_format_version": self._format_version,
+            "_meta": {
+                "item_id": self.item_id,
+                "item_type": self.item_type.value,
+                "intent": self.intent,
+                "generated_at": self.generated_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "llm_model": self.llm_model,
+            },
         }
 
 

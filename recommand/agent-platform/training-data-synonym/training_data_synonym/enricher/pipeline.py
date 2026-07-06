@@ -154,12 +154,24 @@ class EnrichmentPipeline:
                 if isinstance(c, dict) and c.get("name")
             }
 
+        # Collect columns marked llm_input: true → only these go to LLM prompt
+        _llm_input_fields: set[str] = set()
+        for t in raw_yaml.get("tables") or []:
+            for c in (t.get("columns") or []):
+                if isinstance(c, dict) and c.get("llm_input"):
+                    _llm_input_fields.add(str(c["name"]))
+
+        _few_shot = (raw_yaml.get("_meta") or {}).get("few_shot") or []
+
         self.llm_enricher = LLMEnricher(
             llm_client=self.llm,
             inference_config=inference_config,
             dictionary=self.config.dim_dictionary,
             prompt_template=self.prompt_template,
             constrain_to_dict=getattr(self, "_constrain_to_dict", True),
+            input_fields=_llm_input_fields if _llm_input_fields else None,
+            use_name_hints=False,
+            few_shot=_few_shot if _few_shot else None,
         )
 
         # Writers

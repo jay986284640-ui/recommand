@@ -1,68 +1,70 @@
-"""llm_generator — Stage 2 multi-turn dialogue generator with ground-truth injection.
+"""llm_generator — Stage 3: parameter-extraction dialogue generator.
 
-Per research.md D-011. Builds prompt with target ground-truth, calls LLM,
-parses structured JSON, validates messages.
+Generates natural multi-turn user conversations whose semantics correspond
+to given target params. The LLM returns {messages, guide_text}.
 """
 
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import Optional
 
 from ..common.exceptions import ValidationError
 from ..common.llm_client import LLMClient
 from ..common.logging import get_logger
-from ..data_model import DIM_ORDER, MessageTurn, Role, SFTSample
+from ..data_model import MessageTurn
 
 logger = get_logger(__name__)
 
+# Field definitions injected into the prompt so the LLM understands
+# the parameter schema without hardcoding it in the template.
+FIELD_DEFINITIONS = """1. **category**: 核心品类（如：咖啡、火锅、烧烤、奶茶）
+2. **brand**: 品牌或店名（如：星巴克、麦当劳、肯德基、喜茶）
+3. **distance**: 距离要求（单位km）
+4. **avg_prc**: 人均价格要求（单位元）
+5. **taste**: 口味偏好（如：甜、辣、清淡、酱香）
+6. **cuisine**: 菜系类型（如：川菜、粤菜、日料、西餐）
+7. **occasion**: 消费场景（如：环境好、聚餐、亲子、约会、生日、节日）
+8. **meal_time**: 用餐时段（如：早餐、午餐、下午茶、晚餐、夜宵）
+9. **consumable_type**: 食饮类型（food / drink / mixed）"""
+
 
 def build_sft_prompt(
-    item_tags_dict: dict,
-    target_intent: str,
+    *,
     target_params: dict,
-    target_order_by: Optional[str],
     target_turns: int,
-    negative_type: Optional[str],
-    sentence_template: str,
+    item_name: str = "",
     prompt_template: str,
 ) -> str:
-    """Inject ground-truth into the Stage 2 prompt template."""
-    intent_block = (
-        f"- intent:    {target_intent}\n"
-        f"- params:    {json.dumps(target_params, ensure_ascii=False)}\n"
-        f"- order_by:  {target_order_by}\n"
-        f"- 对话轮数:  {target_turns}\n"
-        f"- 负样本类型: {negative_type or 'none'}\n"
-        f"- 句式骨架:  {sentence_template}"
-    )
+    """Build the parameter-extraction dialogue generation prompt."""
+    params_json = json.dumps(target_params, ensure_ascii=False, indent=2)
+
     return (
         prompt_template
-        .replace("{item_tags}", json.dumps(item_tags_dict, ensure_ascii=False, default=str))
-        .replace("{target_intent}", target_intent)
-        .replace("{target_params}", json.dumps(target_params, ensure_ascii=False, default=str))
-        .replace("{target_order_by}", target_order_by or "null")
+        .replace("{target_params}", params_json)
         .replace("{target_turns}", str(target_turns))
-        .replace("{negative_type}", negative_type or "none")
-        .replace("{sentence_template}", sentence_template)
+        .replace("{field_definitions}", FIELD_DEFINITIONS)
     )
 
 
-def parse_sft_response(payload: dict) -> tuple[list[MessageTurn], list[str]]:
-    """Parse LLM JSON → (messages, covered_dims)."""
+def parse_sft_response(payload: dict) -> tuple[list[MessageTurn], str]:
+    """Parse LLM JSON → (messages, guide_text)."""
     if not isinstance(payload, dict):
         raise ValidationError("LLM response not a dict")
+
     raw_msgs = payload.get("messages", [])
     if not isinstance(raw_msgs, list):
         raise ValidationError("messages field is not a list")
+
     messages = []
     for m in raw_msgs:
         if not isinstance(m, dict) or "role" not in m or "content" not in m:
             raise ValidationError(f"bad message entry: {m}")
         messages.append(MessageTurn(role=str(m["role"]), content=str(m["content"])))
-    covered_dims = list(payload.get("covered_dims", []) or [])
-    return messages, covered_dims
+
+    guide_text = str(payload.get("guide_text", "") or "")
+
+    return messages, guide_text
 
 
 class LLMGenerator:
@@ -76,29 +78,21 @@ class LLMGenerator:
 
     @property
     def model_name(self) -> str:
-        """Forward to the underlying client — used as `llm_model` in SFTSample."""
         return self._llm.model_name
 
     def generate(
         self,
         *,
-        item_tags_dict: dict,
-        target_intent: str,
         target_params: dict,
-        target_order_by: Optional[str],
         target_turns: int,
-        negative_type: Optional[str],
-        sentence_template: str,
+        item_name: str = "",
         item_id: str = "",
-    ) -> tuple[list[MessageTurn], list[str]]:
+    ) -> tuple[list[MessageTurn], str]:
+        """Generate a dialogue + guide_text for the given target params."""
         prompt = build_sft_prompt(
-            item_tags_dict=item_tags_dict,
-            target_intent=target_intent,
             target_params=target_params,
-            target_order_by=target_order_by,
             target_turns=target_turns,
-            negative_type=negative_type,
-            sentence_template=sentence_template,
+            item_name=item_name,
             prompt_template=self._template,
         )
         resp = self._llm.complete(prompt, temperature=0.7, item_id=item_id)
@@ -111,4 +105,5 @@ __all__ = [
     "LLMGenerator",
     "build_sft_prompt",
     "parse_sft_response",
+    "FIELD_DEFINITIONS",
 ]

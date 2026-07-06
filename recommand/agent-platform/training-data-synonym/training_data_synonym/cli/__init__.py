@@ -150,9 +150,18 @@ def _build_hive_reader(args, configs_dir: Path):
     if args.source == "csv":
         from ..hive_reader.csv_reader import CsvReader
 
-        csv_dir = getattr(args, "csv_dir", None) or "tests/fixtures/csv"
-        delimiter = getattr(args, "csv_delimiter", None) or ","
-        return CsvReader(csv_dir=csv_dir, delimiter=delimiter)
+        csv_dir = getattr(args, "csv_dir", None)
+        csv_delimiter = getattr(args, "csv_delimiter", None) or ","
+        # Fallback to pipeline.yaml config if not specified on CLI
+        if csv_dir is None:
+            try:
+                cfg = Config.load(args.configs_dir)
+                csv_cfg = ((cfg.pipeline.get("training_data_synonym") or {}).get("input") or {}).get("csv") or {}
+                csv_dir = csv_cfg.get("csv_dir") or "../../knowledge_database"
+                csv_delimiter = csv_cfg.get("delimiter") or csv_delimiter
+            except Exception:
+                csv_dir = "../../knowledge_database"
+        return CsvReader(csv_dir=csv_dir, delimiter=csv_delimiter)
     raise ValueError(f"unknown source: {args.source} (expected 'mock', 'hive', or 'csv')")
 
 
@@ -199,6 +208,7 @@ def _run_enrichment(
     constrain_to_dict: bool,
     dict_snapshot_path: str | None = None,
     stage_label: str = "enrich",
+    prompt_template_path: str | None = None,
 ) -> dict:
     """Run EnrichmentPipeline and return the summary dict.
 
@@ -239,6 +249,7 @@ def _run_enrichment(
         output_dir=args.output_dir,
         constrain_to_dict=constrain_to_dict,
         sample_n_per_type=sample_n,
+        prompt_template_path=prompt_template_path,
         **{kw: val},
     )
     print(f"{stage_label}: running enrichment pipeline...")
@@ -290,10 +301,15 @@ def _extract_tags_impl(args) -> int:
     """
     from .extract_dictionary import extract
 
-    # ---- Phase 1: LLM free-form on a sample ----
-
-    sample_n = min(getattr(args, "n_items_per_type", 20) or 20, 10)
-    print(f"=== Stage 1 Phase 1: LLM free-form enrich (sample {sample_n}/type) ===")
+    # ---- Phase 1: LLM free-form enrich ----
+    # Priority: CLI flag > config > no limit
+    sample_n = getattr(args, "n_items_per_type", None)
+    if sample_n is None:
+        cfg = Config.load(args.configs_dir)
+        input_cfg = (cfg.pipeline.get("training_data_synonym") or {}).get("input") or {}
+        sample_n = input_cfg.get("sample_n_per_type")  # may be None → all
+    label = sample_n if sample_n is not None else "all"
+    print(f"=== Stage 1 Phase 1: LLM free-form enrich ({label}/type) ===")
 
     # Temporarily override n_items_per_type for sampling (the shared runner
     # reads it from args).  Restore after the call so Phase 2 sees the original.
@@ -305,6 +321,7 @@ def _extract_tags_impl(args) -> int:
         constrain_to_dict=False,
         dict_snapshot_path=None,
         stage_label="Stage 1",
+        prompt_template_path="configs/prompts/extract-tags.txt",
     )
 
     if saved_n is not None:
@@ -348,6 +365,14 @@ def _extract_tags_impl(args) -> int:
     item_tags_path = str(out_dir / "item_tags.jsonl")
 
     kw, val = _resolve_tables_config_kwarg(args)
+    # Resolve csv_dir / csv_delimiter from CLI > pipeline.yaml > default
+    csv_dir = getattr(args, "csv_dir", None)
+    csv_delimiter = getattr(args, "csv_delimiter", None) or ","
+    if csv_dir is None:
+        csv_cfg = ((cfg.pipeline.get("training_data_synonym") or {}).get("input") or {}).get("csv") or {}
+        csv_dir = csv_cfg.get("csv_dir") or "../../knowledge_database"
+        csv_delimiter = csv_cfg.get("delimiter") or csv_delimiter
+
     stats = extract(
         source=args.source,
         fixture_dir=args.fixture_dir,
@@ -360,8 +385,8 @@ def _extract_tags_impl(args) -> int:
         sample_n_per_type=getattr(args, "n_items_per_type", None),
         hive_metastore_uri=getattr(args, "hive_metastore_uri", None),
         warehouse_dir=getattr(args, "warehouse_dir", None),
-        csv_dir=getattr(args, "csv_dir", None) or "tests/fixtures/csv",
-        csv_delimiter=getattr(args, "csv_delimiter", None) or ",",
+        csv_dir=csv_dir,
+        csv_delimiter=csv_delimiter,
         item_types=item_types,
         item_tags_path=item_tags_path,
     )
@@ -413,23 +438,72 @@ cmd_extract_dictionary = _extract_tags_impl  # legacy alias
 
 
 def cmd_generate_synonyms(args) -> int:
-    """Generate synonyms_solr.txt from Stage 2 item_profile.jsonl."""
-    from ..synonym.builder import build_synonyms
+    """Generate synonyms_solr.txt from Stage 1 item_profile via LLM.
 
-    profile = Path(getattr(args, "input", None) or "test_output/item_profile.jsonl")
+    Each unique brand / category tag is sent individually to the LLM for
+    synonym generation.  Results are merged, deduplicated, and written in
+    ES Solr multi-way format.
+    """
+    import sys
+
+    _synonym_dir = Path(__file__).resolve().parent.parent.parent / "synonym-dictionary"
+    if str(_synonym_dir) not in sys.path:
+        sys.path.insert(0, str(_synonym_dir))
+    from synonym_builder import build_synonyms
+
+    # ---- resolve paths ----
+    profile = Path(getattr(args, "input", None) or "output/stage1/item_profile.jsonl")
     if not profile.exists():
         print(f"ERROR: item_profile.jsonl not found: {profile}", file=sys.stderr)
         return 2
-    brand_dict = (
-        Path(args.brand_dict)
-        if getattr(args, "brand_dict", None)
-        else Path(args.configs_dir) / "brand_dictionary.yaml"
+
+    dict_snapshot = (
+        Path(args.dict_snapshot)
+        if getattr(args, "dict_snapshot", None)
+        else Path(args.output_dir or "output/stage1") / "dim_dictionary_snapshot.yaml"
     )
-    build_synonyms(
+    if not dict_snapshot.exists():
+        print(f"ERROR: dim_dictionary_snapshot.yaml not found: {dict_snapshot}", file=sys.stderr)
+        print(f"  Run Stage 1 extract-tags first, or use --dict-snapshot <path>",
+              file=sys.stderr)
+        return 2
+
+    output_dir = (
+        Path(args.output_dir) if getattr(args, "output_dir", None)
+        else _synonym_dir / "output"
+    )
+
+    prompt_template = (
+        Path(args.prompt_template)
+        if getattr(args, "prompt_template", None)
+        else _synonym_dir / "configs" / "prompts" / "synonym_generation.txt"
+    )
+    if not prompt_template.exists():
+        print(f"ERROR: prompt template not found: {prompt_template}", file=sys.stderr)
+        return 2
+
+    # ---- build LLM client ----
+    cfg = Config.load(args.configs_dir)
+    # Reuse enrichment LLM settings for synonym generation (low-temp, short response)
+    settings = _resolve_llm_settings(cfg, args, "enrichment")
+    # Override max_tokens for synonym generation (smaller response)
+    settings.setdefault("max_tokens", 512)
+    llm: LLMClient = build_llm_client(**settings)
+    print(f"Synonym generation via LLM: {llm.model_name}")
+
+    # ---- run ----
+    stats = build_synonyms(
         profile_path=profile,
-        brand_dict_path=brand_dict,
-        output_dir=args.output_dir or Path(profile).parent,
+        dim_dict_path=dict_snapshot,
+        output_dir=output_dir,
+        llm_client=llm,
+        prompt_template_path=prompt_template,
     )
+    print(f"\n=== Synonyms generated ===")
+    for k, v in stats.items():
+        print(f"  {k}: {v}")
+    print(f"  → {output_dir / 'synonyms_solr.txt'}")
+    print(f"  → {output_dir / 'synonyms_meta.json'}")
     return 0
 
 
@@ -445,7 +519,7 @@ def cmd_sft(args) -> int:
         input_path=args.input,
         output_dir=args.output_dir,
         count_per_item=getattr(args, "count_per_item", 8),
-        max_message_turns=getattr(args, "max_message_turns", 5),
+        max_message_turns=getattr(args, "max_message_turns", 6),
         negative_ratio=getattr(args, "negative_ratio", 0.10),
     )
     summary = pipeline.run()
@@ -686,7 +760,7 @@ def cmd_all(args) -> int:
         input_path=out_dir / "item_tags.jsonl",
         output_dir=out_dir,
         count_per_item=getattr(args, "count_per_item", 8),
-        max_message_turns=getattr(args, "max_message_turns", 5),
+        max_message_turns=getattr(args, "max_message_turns", 6),
         negative_ratio=getattr(args, "negative_ratio", 0.10),
     )
     sft_summary = sft.run()
@@ -800,7 +874,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--jaccard-threshold", type=float, default=0.6)
     sp.add_argument("--n-items-per-type", type=int, default=None)
     sp.add_argument(
-        "--csv-dir", default="tests/fixtures/csv", help="CSV reader directory (for --source csv)"
+        "--csv-dir", default=None, help="CSV reader directory (for --source csv)"
     )
     sp.add_argument("--csv-delimiter", default=",", help="CSV field delimiter (e.g. ',' '\\t' '|')")
     sp.set_defaults(func=cmd_extract_tags)
@@ -811,11 +885,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sp.add_argument("--source", choices=["hive", "mock", "csv"], default="mock")
     sp.add_argument("--fixture-dir", default="tests/fixtures/hive")
-    sp.add_argument("--n-items-per-type", type=int, default=100)
+    sp.add_argument("--n-items-per-type", type=int, default=None)
     sp.add_argument("--output-dir", type=Path, default=Path("./out"))
     sp.add_argument("--seed", type=int, default=42)
     sp.add_argument(
-        "--csv-dir", default="tests/fixtures/csv", help="CSV reader directory (for --source csv)"
+        "--csv-dir", default=None, help="CSV reader directory (for --source csv)"
     )
     sp.add_argument("--csv-delimiter", default=",", help="CSV field delimiter (e.g. ',' '\\t' '|')")
     sp.add_argument(
@@ -833,7 +907,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--input", type=Path, required=True, help="item_tags.jsonl from Stage 1")
     sp.add_argument("--output-dir", type=Path, default=Path("./out_sft"))
     sp.add_argument("--count-per-item", type=int, default=8)
-    sp.add_argument("--max-message-turns", type=int, default=5)
+    sp.add_argument("--max-message-turns", type=int, default=6)
     sp.add_argument("--negative-ratio", type=float, default=0.10)
     sp.add_argument("--seed", type=int, default=42)
     sp.set_defaults(func=cmd_sft)
@@ -852,7 +926,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--jaccard-threshold", type=float, default=0.6)
     sp.add_argument("--n-items-per-type", type=int, default=None)
     sp.add_argument(
-        "--csv-dir", default="tests/fixtures/csv", help="CSV reader directory (for --source csv)"
+        "--csv-dir", default=None, help="CSV reader directory (for --source csv)"
     )
     sp.add_argument("--csv-delimiter", default=",", help="CSV field delimiter (e.g. ',' '\\t' '|')")
     sp.set_defaults(func=cmd_extract_dictionary)
@@ -871,14 +945,21 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_split)
     sp = sub.add_parser(
         "generate-synonyms",
-        help="Stage 2 item_profile → synonyms_solr.txt (ES retrieval)",
+        help="Stage 1 item_profile → synonyms_solr.txt (LLM-driven, ES retrieval)",
         parents=[parent],
     )
     sp.add_argument("--input", type=Path, default=None, help="item_profile.jsonl path")
     sp.add_argument(
         "--output-dir", type=Path, default=None, help="output dir for synonyms_solr.txt"
     )
-    sp.add_argument("--brand-dict", type=Path, default=None, help="brand_dictionary.yaml path")
+    sp.add_argument(
+        "--dict-snapshot", type=Path, default=None,
+        help="Stage 1 dim_dictionary_snapshot.yaml path",
+    )
+    sp.add_argument(
+        "--prompt-template", type=Path, default=None,
+        help="synonym generation prompt template path",
+    )
     sp.set_defaults(func=cmd_generate_synonyms)
     sp = sub.add_parser(
         "verify", help="SC self-check (Stage 1 + Stage 2 + splits)", parents=[parent]
@@ -894,7 +975,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--n-items-per-type", type=int, default=100)
     sp.add_argument("--seed", type=int, default=42)
     sp.add_argument("--count-per-item", type=int, default=8)
-    sp.add_argument("--max-message-turns", type=int, default=5)
+    sp.add_argument("--max-message-turns", type=int, default=6)
     sp.add_argument("--negative-ratio", type=float, default=0.10)
     sp.set_defaults(func=cmd_all)
 

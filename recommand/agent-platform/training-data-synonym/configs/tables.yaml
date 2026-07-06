@@ -12,23 +12,80 @@ _meta:
 
   llm_inference:
     - field: category
-      desc: 根据门店名称和品类推断商品所属的品类,如咖啡、快餐、奶茶、火锅、便利店
+      desc: 根据门店名称和品类推断商品所属的品类,如凉茶,火锅,椰子鸡火锅,粥底火锅,铜火锅,羊蝎子火锅,麻辣香锅,串串香,烤串,烤鱼,烤肉,烧烤,铁板烧,咖啡,奶茶,甜品,小吃,面包房,牛排,炸鸡,小龙虾,快餐,素食,麻辣拌,麻辣烫,粥铺,烤鸭,米线,酸菜鱼,披萨,自助,烤全羊,轻食,茶餐厅,家常菜,面馆,海鲜,卤味,砂锅,酸辣粉,大排档,不要推断它的菜系,如日料,韩料,泰国菜,西餐,湘菜,川菜,重庆菜
       multiple: false
     - field: brand
       desc: 推断推断门店的品牌,如星巴克、麦当劳、肯德基、喜茶
       multiple: false
     - field: taste
-      desc: 根据门店类型和菜品特征推断口味标签(可多选),如甜、辣、清淡、酱香、烟熏
+      desc: 根据门店类型和菜品特征推断口味标签(可多选),如酸,甜,辣,麻,麻辣,咸鲜,鱼香,糖醋,酱香,蒜香,葱香,姜,芥末,芝麻,孜然,椒盐,五香,怪,糊辣,烧烤,酒香,牛油,咖喱,冬阴功,番茄,菌香,奶香,芝士,黑椒,香草香料,日式风,东南亚风,泡椒风,茶香,花果香,巧克力,咖啡
       multiple: true
     - field: cuisine
-      desc: 推断门店的菜系类型,如川菜、粤菜、日料、西餐、烧烤、小吃
+      desc: 推断门店的菜系类型,如日料,韩料,泰国菜,西餐,湘菜,川菜,重庆菜,云南菜,贵州菜,江西菜,粤菜,潮汕菜,西北菜,本帮菜,上海菜,苏帮菜,淮扬菜,徽菜,东北菜,新疆菜,北京菜,杭帮菜,闽菜,鲁菜馆,湖北菜,客家菜,天津菜不要推测他的品类,如火锅,奶茶,咖啡等
       multiple: false
     - field: occasion
-      desc: 推断该门店适合的消费场景,如早餐、下午茶、环境好、聚餐、亲子、约会、生日、节日
-      multiple: false
+      desc: 推断该门店适合的消费场景,如环境好,约会,纪念日,节日,生日,聚餐,聚会,商务简餐,咖啡办公; 环境好,约会,纪念日,节日,生日,聚餐,聚会,商务简餐,咖啡办公等场景必须有充分依据，例如：大型餐厅,火锅,烤肉,自助,咖啡馆,西餐厅,包厢,用户评价明确提及,否则不要输出。
+      multiple: true
     - field: consumable_type
       desc: 推断是吃的还是喝的,如food、drink、mixed
       multiple: false
+
+  few_shot:
+    - input: 星巴克咖啡（人民广场店）
+      output: |
+        <think>门店名包含"星巴克",这是知名咖啡连锁品牌。咖啡店属于饮品品类。星巴克是美式咖啡文化,不属于特定地域菜系。口味偏甜(咖啡饮品通常含糖)。咖啡店适合约会、下午茶场景。</think>
+        {
+          "category": "咖啡",
+          "brand": "星巴克",
+          "taste": ["甜"],
+          "cuisine": null,
+          "occasion": ["约会", "下午茶"],
+          "consumable_type": "drink"
+        }
+    - input: 海底捞火锅（望京店）
+      output: |
+        <think>门店名包含"海底捞",这是知名火锅连锁品牌。火锅是品类。"海底捞"以服务著称,口味麻辣鲜香。火锅通常适合聚餐。</think>
+        {
+          "category": "火锅",
+          "brand": "海底捞",
+          "taste": ["麻辣", "鲜"],
+          "cuisine": "川菜",
+          "occasion": ["聚餐"],
+          "consumable_type": "food"
+        }
+    - input: 味香斋（大华店）
+      output: |
+        <think>门店名"味香斋"不包含知名品牌词,独立小店品牌填null。"斋"通常暗示面馆。口味偏家常咸鲜。本帮菜风味。面馆通常适合日常简餐。</think>
+        {
+          "category": "面馆",
+          "brand": null,
+          "taste": ["咸鲜"],
+          "cuisine": "本帮菜",
+          "occasion": null,
+          "consumable_type": "food"
+        }
+    - input: 重庆麻辣火锅（南京路店）
+      output: |
+        <think>门店名包含"重庆麻辣火锅"。品类是火锅。重庆暗示川菜菜系。麻辣是口味特征。火锅通常适合聚餐场景。</think>
+        {
+          "category": "火锅",
+          "brand": null,
+          "taste": ["麻辣"],
+          "cuisine": "川菜",
+          "occasion": ["聚餐"],
+          "consumable_type": "food"
+        }
+    - input: 奈雪的茶（静安寺店）
+      output: |
+        <think>门店名包含"奈雪的茶",这是知名茶饮连锁品牌。茶饮属于饮品品类。口味偏甜。茶饮适合下午茶、约会场景。</think>
+        {
+          "category": "奶茶",
+          "brand": "奈雪的茶",
+          "taste": ["甜"],
+          "cuisine": null,
+          "occasion": ["下午茶", "约会"],
+          "consumable_type": "drink"
+        }
 
 tables:
   - db: recommand_workspace
@@ -37,7 +94,7 @@ tables:
     item_id: str_id
     columns:
       - { name: str_id,            type: VARCHAR }
-      - { name: str_nm,            type: VARCHAR }
+      - { name: str_nm,            type: VARCHAR, llm_input: true }
       - { name: cat_nm,            type: VARCHAR }
       - { name: avg_prc,           type: VARCHAR }
       - { name: mnt_pern_usr_num,  type: VARCHAR }
@@ -53,8 +110,8 @@ tables:
     item_id: shopid
     columns:
       - { name: shopid,            type: VARCHAR }
-      - { name: shopname,          type: VARCHAR }
-      - { name: brnd_nm,           type: VARCHAR }
+      - { name: shopname,          type: VARCHAR, llm_input: true }
+      - { name: brnd_nm,           type: VARCHAR, llm_input: true }
       - { name: mnt_pern_usr_num,  type: VARCHAR }
     sensitive: [opr_psn_id]
 
@@ -64,8 +121,8 @@ tables:
     item_id: couponid
     columns:
       - { name: couponid,           type: BIGINT }
-      - { name: couponname,         type: VARCHAR }
-      - { name: productdesc,        type: VARCHAR }
+      - { name: couponname,         type: VARCHAR, llm_input: true }
+      - { name: productdesc,        type: VARCHAR, llm_input: true }
       - { name: ruledescription,    type: VARCHAR }
       - { name: faceprice,          type: VARCHAR }
     sensitive: [creator, updateperson]

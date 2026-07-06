@@ -1,18 +1,11 @@
-"""validator — Stage 2 8-dim dict check + 5-turn cap (per FR-012).
+"""validator — Stage 3 param-extraction validation.
 
-Reuses param_ops.validate_params. Additional invariants:
-  - messages[0].role == "user"
-  - messages length ∈ [1, 5]
-  - negative=true ⇔ negative_type ∈ {reject, pivot, unsatisfiable}
-  - distance alignment (LLM-side; here we just structural check)
+Validates the new SFT output format: {messages, params, guide_text}.
 """
 
 from __future__ import annotations
 
-from typing import Optional
-
-from ..data_model import DIM_ORDER, MessageTurn, SFTSample
-from ..param_ops import validate_params
+from ..data_model import SFTSample
 
 
 class SFTValidationError(Exception):
@@ -27,45 +20,47 @@ def validate_sft_sample(
 ) -> tuple[bool, list[str]]:
     errors: list[str] = []
 
-    # 1. params dictionary check (8 dims, 4 ops)
-    ok, errs = validate_params(sample.params, dictionary)
-    errors.extend(errs)
-
-    # 2. messages invariants
+    # 1. messages invariants
     if not sample.messages:
         errors.append("messages empty")
     if sample.messages:
         if sample.messages[0].role != "user":
             errors.append(f"messages[0].role != user (got {sample.messages[0].role})")
         if not (1 <= len(sample.messages) <= max_turns):
-            errors.append(f"messages length {len(sample.messages)} ∉ [1, {max_turns}]")
+            errors.append(f"messages length {len(sample.messages)} not in [1, {max_turns}]")
         for i, m in enumerate(sample.messages):
             if not m.content or len(m.content.strip()) < 1:
                 errors.append(f"messages[{i}].content empty or whitespace")
             if m.role not in {"user", "assistant", "system"}:
                 errors.append(f"messages[{i}].role '{m.role}' invalid")
-            if "\n\n\n" in m.content:
-                errors.append(f"messages[{i}].content has ≥3 consecutive newlines")
-            if "\t" in m.content:
-                errors.append(f"messages[{i}].content has tab")
 
-    # 3. negative <-> negative_type
-    if sample.negative:
-        if sample.negative_type not in {"reject", "pivot", "unsatisfiable"}:
-            errors.append(
-                f"negative=true but negative_type='{sample.negative_type}' invalid"
-            )
+    # 2. guide_text must be a non-empty string
+    if not sample.guide_text or not isinstance(sample.guide_text, str):
+        errors.append("guide_text missing or empty")
+
+    # 3. params: each value must be null or array of {op, values} objects
+    if not isinstance(sample.params, dict):
+        errors.append("params is not a dict")
     else:
-        if sample.negative_type is not None:
-            errors.append(
-                f"negative=false but negative_type='{sample.negative_type}' not null"
-            )
+        valid_ops = {"contains", "not contains", "between", "gte", "lte", "gt", "lt", "eq", "in"}
+        for field, val in sample.params.items():
+            if val is None:
+                continue
+            if not isinstance(val, list):
+                errors.append(f"params.{field} must be null or array, got {type(val).__name__}")
+                continue
+            for i, item in enumerate(val):
+                if not isinstance(item, dict):
+                    errors.append(f"params.{field}[{i}] not a dict")
+                    continue
+                op = item.get("op", "")
+                if op not in valid_ops:
+                    errors.append(f"params.{field}[{i}].op '{op}' not in {valid_ops}")
+                vals = item.get("values")
+                if not isinstance(vals, list):
+                    errors.append(f"params.{field}[{i}].values not a list")
 
-    # 4. order_by must be in 5-set or null
-    if sample.order_by not in {None, "distance", "price", "rating", "time"}:
-        errors.append(f"order_by '{sample.order_by}' not in allowed set")
-
-    # 5. intent must be in 5-set
+    # 4. intent must be in allowed set
     if sample.intent not in {"search_item", "use_coupon", "pay", "view_order", "browse"}:
         errors.append(f"intent '{sample.intent}' not in allowed set")
 

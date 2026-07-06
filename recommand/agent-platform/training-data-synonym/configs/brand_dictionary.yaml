@@ -98,7 +98,7 @@ brands:
     category: 快餐
 
   - canonical: Burger_King
-    variants: [Burger King, burger king, BURGER KING, 汉堡王, 堡狮龙]
+    variants: [Burger King, burger king, BURGER KING, 汉堡王]
     category: 快餐
 
   - canonical: Subway

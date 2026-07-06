@@ -24,13 +24,26 @@ def build_enrichment_prompt(
     name_hints: dict | None = None,
     include_candidates: bool = True,
     dictionary: dict | None = None,
+    input_fields: set[str] | None = None,
+    few_shot: list[dict] | None = None,
 ) -> str:
     """Build prompt from config: field names, descriptions, types.
 
     ``inference_config`` is the ``_meta.llm_inference`` list from tables.yaml.
     Each entry: ``{field, desc, multiple}``.
+
+    ``input_fields`` filters *raw_record* to only the columns marked
+    ``llm_input: true`` in tables.yaml.  When ``None`` (legacy), all columns
+    are included.
+
+    ``few_shot`` is the ``_meta.few_shot`` list from tables.yaml.
+    Each entry: ``{input, output}`` where output is the expected JSON.
     """
-    raw_json = json.dumps(raw_record, ensure_ascii=False, default=str)
+    if input_fields is not None:
+        filtered = {k: v for k, v in raw_record.items() if k in input_fields}
+    else:
+        filtered = raw_record
+    raw_json = json.dumps(filtered, ensure_ascii=False, default=str)
 
     # Build JSON schema section for LLM
     json_lines = []
@@ -42,6 +55,18 @@ def build_enrichment_prompt(
         json_lines.append(f'  "{fld}": {type_hint},')
 
     struct_block = "{\n" + "\n".join(json_lines) + "\n}"
+
+    # Few-shot examples block
+    few_shot_block = ""
+    if few_shot:
+        lines = ["示例:"]
+        for i, ex in enumerate(few_shot, 1):
+            inp = ex.get("input", "")
+            out = ex.get("output", "")
+            lines.append(f"\n示例{i}:")
+            lines.append(f"门店名称: {inp}")
+            lines.append(f"输出:\n{out}")
+        few_shot_block = "\n".join(lines) + "\n"
 
     # Dictionary candidates block (Stage 2 / constrained mode)
     dict_block = ""
@@ -68,8 +93,9 @@ def build_enrichment_prompt(
         prompt_template
         .replace("{raw_record}", raw_json)
         .replace("{fields_schema}", struct_block)
-        + dict_block
+        .replace("{dict_block}", dict_block)
         + hint_block
+        + few_shot_block
     )
 
 
@@ -108,6 +134,9 @@ class LLMEnricher:
         brand_values: list[str] | None = None,
         *,
         constrain_to_dict: bool = True,
+        input_fields: set[str] | None = None,
+        use_name_hints: bool = True,
+        few_shot: list[dict] | None = None,
     ) -> None:
         self._llm = llm_client
         self._config = inference_config
@@ -118,6 +147,9 @@ class LLMEnricher:
         self._brand_values = brand_values or (
             dictionary.get("brand") or {}
         ).get("values", []) or []
+        self._input_fields = input_fields  # None = legacy: send all columns
+        self._use_name_hints = use_name_hints  # False = pure LLM, no rule injection
+        self._few_shot = few_shot or []
 
         self.rejection_count: int = 0
         self.rejection_log: list[dict[str, Any]] = []
@@ -125,18 +157,28 @@ class LLMEnricher:
         self.inferred_log: list[dict[str, Any]] = []
 
     def enrich(self, raw_record: dict, *, item_id: str = "") -> dict[str, Any]:
-        name_hints = compute_name_hints(raw_record, self._dict, self._brand_values)
+        name_hints = (
+            compute_name_hints(raw_record, self._dict, self._brand_values)
+            if self._use_name_hints
+            else {}
+        )
         prompt = build_enrichment_prompt(
             raw_record, self._config, self._template,
-            name_hints=name_hints,
+            name_hints=name_hints if self._use_name_hints else None,
             include_candidates=self._constrain,
             dictionary=self._dict,
+            input_fields=self._input_fields,
+            few_shot=self._few_shot,
         )
+        logger.info("llm_prompt", extra={
+            "stage": "enrich", "item_id": item_id, "prompt": prompt,
+        })
         try:
             resp = self._llm.complete(prompt, temperature=0.3, item_id=item_id)
             validate_complete_response(resp)
             parsed = parse_enrichment_response(resp, self._config)
-            self._apply_name_fallback(parsed, name_hints, item_id)
+            # name_hints are shown in prompt as auxiliary info only;
+            # we do NOT force-override model output — LLM has final say.
             if self._constrain:
                 return self._constrain_to_dict(parsed, item_id)
             return {f: parsed.get(f) for f in self._fields}

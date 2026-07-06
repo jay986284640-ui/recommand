@@ -1,0 +1,133 @@
+# 品类同义词词典(category_dictionary.yaml)
+# 用途:同义词词表生成(品类中心 3 源之一)
+# 与 brand_dictionary.yaml 的差异:这里记录品类级别名,不是具体品牌
+
+# 字段说明:
+#   canonical: 主品类(用于统计覆盖 + LP Agent 召回时的品类过滤)
+#   variants:  所有别名(含主名),用于 ES 检索同义词
+#   aliases:    简写 / 口语化表达(用于 query 匹配)
+
+categories:
+  # ──── 餐饮大类 ────
+  - canonical: 咖啡
+    variants: [咖啡, coffee, Coffee, COFFEE, 咖啡店, coffee shop, 咖啡馆, café, Cafe, 咖]
+    aliases: [喝咖啡, 来杯咖啡, 买咖啡, 咖啡店推荐]
+
+  - canonical: 奶茶
+    variants: [奶茶, milk tea, Milk Tea, milktea, 茶饮, 茶店, 奶茶店, milk-tea]
+    aliases: [喝奶茶, 来杯奶茶, 买奶茶, 奶茶店推荐]
+
+  - canonical: 快餐
+    variants: [快餐, fast food, Fast Food, fastfood, 速食, 快餐厅, 简餐, quick meal]
+    aliases: [吃快餐, 来份快餐, 快餐店]
+
+  - canonical: 烘焙
+    variants: [烘焙, bakery, Bakery, BAKERY, 面包店, 西点, 糕点, pastry, 蛋糕店]
+    aliases: [买面包, 买点糕点, 烘焙店]
+
+  - canonical: 便利店
+    variants: [便利店, convenience store, ConvenienceStore, 便利商店, CVS, cvs, 超市, 小卖部]
+    aliases: [去便利店, 便利店买东西]
+
+  # ──── 中餐细类 ────
+  - canonical: 中餐
+    variants: [中餐, Chinese food, ChineseFood, 中式, 中式餐饮, 中国菜]
+    aliases: [吃中餐, 中餐馆]
+
+  - canonical: 火锅
+    variants: [火锅, hot pot, HotPot, hotpot, HOT POT, 涮锅, 火锅店]
+    aliases: [吃火锅, 涮火锅]
+
+  - canonical: 烧烤
+    variants: [烧烤, BBQ, bbq, Bbq, 烤串, 撸串, 烧烤店]
+    aliases: [吃烧烤, 撸串]
+
+  - canonical: 麻辣烫
+    variants: [麻辣烫, malatang, Malatang, 麻辣, 麻辣香锅, 麻辣烫店]
+    aliases: [吃麻辣烫, 来份麻辣烫]
+
+  - canonical: 兰州拉面
+    variants: [兰州拉面, Lanzhou noodles, lanzhou lamian, 拉面, 牛肉拉面, 拉面馆]
+    aliases: [吃拉面, 兰州拉面馆]
+
+  - canonical: 黄焖鸡
+    variants: [黄焖鸡, 黄焖鸡米饭, braised chicken, Braised Chicken, 杨铭宇, 黄焖鸡店]
+    aliases: [吃黄焖鸡, 黄焖鸡米饭]
+
+  - canonical: 沙县小吃
+    variants: [沙县小吃, Shaxian Snacks, shaxian, 沙县, 沙县小吃店]
+    aliases: [吃沙县, 沙县小吃推荐]
+
+  # ──── 西餐细类 ────
+  - canonical: 西餐
+    variants: [西餐, Western food, WesternFood, 西式, 西式餐饮]
+    aliases: [吃西餐, 西餐厅]
+
+  - canonical: 披萨
+    variants: [披萨, pizza, Pizza, PIZZA, 匹萨, 批萨, 比萨, 披萨店]
+    aliases: [吃披萨, 来份披萨, 买披萨]
+
+  - canonical: 汉堡
+    variants: [汉堡, burger, Burger, BURGER, 汉堡包, hamburg, Hamburger, 汉堡店]
+    aliases: [吃汉堡, 来份汉堡, 买汉堡]
+
+  - canonical: 薯条
+    variants: [薯条, fries, Fries, FRIES, 炸薯条, french fries, French Fries]
+    aliases: [吃薯条, 来份薯条]
+
+  - canonical: 鸡翅
+    variants: [鸡翅, chicken wings, Chicken Wings, chicken wings, 鸡翅膀, 烤鸡翅, 鸡翅店]
+    aliases: [吃鸡翅, 来份鸡翅]
+
+  - canonical: 炸鸡
+    variants: [炸鸡, fried chicken, Fried Chicken, 炸鸡块, 肯德基炸鸡, 炸鸡店]
+    aliases: [吃炸鸡, 来份炸鸡, 买炸鸡]
+
+  # ──── 日料 ────
+  - canonical: 日料
+    variants: [日料, Japanese food, JapaneseFood, 日本料理, 寿司, sushi, Sushi, SUSHI, 刺身]
+    aliases: [吃日料, 日料店, 吃寿司]
+
+  # ──── 甜品 ────
+  - canonical: 甜品
+    variants: [甜品, dessert, Dessert, DESSERT, 甜点, 甜食, sweets, 糖水, 甜品店]
+    aliases: [吃甜品, 来份甜品, 买甜点]
+
+  # ──── 水果 ────
+  - canonical: 水果
+    variants: [水果, fruit, Fruit, FRUIT, 鲜果, 时令水果, 水果店, 果汁店]
+    aliases: [买水果, 水果店推荐, 来点水果]
+
+  # ──── 咖啡饮品(品类级) ────
+  - canonical: 拿铁
+    variants: [拿铁, latte, Latte, LATTE, 拿铁咖啡, latte coffee, 拿铁咖]
+    aliases: [来杯拿铁, 喝拿铁]
+
+  - canonical: 美式
+    variants: [美式, 美式咖啡, americano, Americano, AMERICANO, American]
+    aliases: [来杯美式, 喝美式]
+
+  - canonical: 卡布奇诺
+    variants: [卡布奇诺, cappuccino, Cappuccino, CAPPUCCINO, 卡布]
+    aliases: [来杯卡布, 喝卡布奇诺]
+
+  - canonical: 摩卡
+    variants: [摩卡, mocha, Mocha, MOCHA, 摩卡咖啡, mocha coffee]
+    aliases: [来杯摩卡, 喝摩卡]
+
+  # ──── 茶饮(品类级) ────
+  - canonical: 波霸
+    variants: [波霸, 珍珠, bubble, Bubble, BUBBLE, 珍珠奶茶, 波霸奶茶, tapioca]
+    aliases: [来杯波霸, 波霸奶茶]
+
+  - canonical: 芋圆
+    variants: [芋圆, taro ball, Taro Ball, 芋圆奶茶]
+    aliases: [来杯芋圆, 芋圆奶茶]
+
+  - canonical: 奶盖
+    variants: [奶盖, milk cap, MilkCap, 奶盖茶, cheese foam, cheese tea]
+    aliases: [来杯奶盖, 奶盖茶]
+
+  - canonical: 水果茶
+    variants: [水果茶, fruit tea, FruitTea, 鲜果茶, 果茶]
+    aliases: [来杯水果茶, 鲜果茶]

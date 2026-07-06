@@ -137,19 +137,39 @@ def aggregate_raw(rows: Iterable[tuple[str, str]]) -> dict[str, RawRow]:
 def query_brands_from_hive(
     reader: HiveReader, sql_tables: list[TableMeta], spec: HiveReadSpec
 ) -> list[tuple[str, str]]:
-    """Yield (raw_brand_name, item_type_str) from all configured tables."""
+    """Yield (raw_brand_name, item_type_str) from all configured tables.
+
+    Only uses explicit brand columns (``brnd_nm``, ``shopname``).
+    ``str_nm`` is intentionally excluded — it's a store name, not a brand.
+    Brands without an explicit column come from LLM inference via
+    ``_read_llm_tags``.
+    """
     out: list[tuple[str, str]] = []
     for tm in sql_tables:
         for rec in reader.read(tm, spec):
-            raw_brand = (
-                rec.raw.get("brnd_nm")
-                or rec.raw.get("str_nm")
-                or rec.raw.get("shopname")
-                or rec.raw.get("couponname")
-            )
+            raw_brand = rec.raw.get("brnd_nm") or rec.raw.get("shopname")
             if raw_brand:
                 out.append((raw_brand, rec.item_type.value))
     return out
+
+
+def _clean_cat_nm(raw: str) -> str:
+    """Clean hierarchical category names from CSV.
+
+    "地方菜系-云南菜" → "云南菜"
+    "异域料理-日式料理" → "日式料理"
+    "小吃快餐-米粉面馆" → "米粉面馆"
+    """
+    if not raw:
+        return ""
+    # If it has a "-" separator, take the part after the last "-"
+    if "-" in raw:
+        parts = raw.rsplit("-", 1)
+        # Only strip if prefix looks like a broad category (全中文, no digits)
+        prefix, suffix = parts[0], parts[1]
+        if suffix and len(suffix) >= 2:
+            return suffix.strip()
+    return raw.strip()
 
 
 def query_categories_from_hive(
@@ -161,7 +181,9 @@ def query_categories_from_hive(
         for rec in reader.read(tm, spec):
             cat = rec.raw.get("cat_nm")
             if cat:
-                out.append((cat, rec.item_type.value or tm.table_name))
+                cat = _clean_cat_nm(str(cat))
+                if cat:
+                    out.append((cat, rec.item_type.value or tm.table_name))
     return out
 
 
@@ -614,9 +636,9 @@ def extract(
     # brand: raw columns + LLM tags (union)
     brand_tuples = query_brands_from_hive(reader, sql_tables, spec) + llm_tags.get("brand", [])
 
-    # category: raw columns + LLM tags (union)
-    cat_raw = query_categories_from_hive(reader, sql_tables, spec)
-    cat_tuples = cat_raw + llm_tags.get("category", [])
+    # category: LLM tags only (raw cat_nm is unreliable — contains cuisines,
+    # hierarchical prefixes, etc.).  LLM inference provides clean categories.
+    cat_tuples = llm_tags.get("category", [])
 
     # Remaining LLM-inferred label dims — exclude brand/category (special
     # handling) and numeric/geo dims that are not labels (avg_prc, distance, age).

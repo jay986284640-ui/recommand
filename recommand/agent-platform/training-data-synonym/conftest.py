@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
+
+# Allow synonym-dictionary tests to import synonym_builder
+_synonym_dir = Path(__file__).resolve().parent / "synonym-dictionary"
+if str(_synonym_dir) not in sys.path:
+    sys.path.insert(0, str(_synonym_dir))
 
 from training_data_synonym.common.config import Config
 from training_data_synonym.common.llm_client import LLMClient, MockLLMClient

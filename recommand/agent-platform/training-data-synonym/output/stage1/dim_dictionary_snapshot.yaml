@@ -5,31 +5,20 @@ _meta:
     item_tags: output/stage1/item_tags.jsonl
     frequency_min: 1
 brand:
-  desc: Stage 1 brand values (5 unique)
+  desc: Stage 1 brand values (0 unique)
   op: in
-  values:
-  - 奈雪的茶
-  - 汉堡王
-  - 牧白手作
-  - 瑞幸咖啡
-  - 霸王茶姬
+  values: []
 category:
-  desc: Stage 1 category values (13 unique)
+  desc: Stage 1 category values (7 unique)
   op: in
   values:
-  - 咖啡
-  - 地方菜系-江浙菜
-  - 地方菜系-粤菜
-  - 奶茶
-  - 小吃快餐-米粉面馆
-  - 小吃快餐-西式快餐
-  - 异域料理-韩式料理
-  - 快餐
-  - 江浙菜
-  - 粤菜
-  - 韩式料理
-  - 饮品-咖啡
-  - 饮品-茶饮果汁
+  - 凉茶
+  - 啫啫煲
+  - 家常菜
+  - 小吃
+  - 海鲜
+  - 烧烤
+  - 面馆
 consumable_type:
   desc: Stage 1 consumable_type values (2 unique)
   op: in
@@ -37,29 +26,30 @@ consumable_type:
   - drink
   - food
 cuisine:
-  desc: Stage 1 cuisine values (5 unique)
+  desc: Stage 1 cuisine values (3 unique)
   op: in
   values:
-  - 小吃
-  - 江浙菜
+  - 新疆菜
+  - 本帮菜
   - 粤菜
-  - 西餐
-  - 韩式料理
 occasion:
   desc: Stage 1 occasion values (3 unique)
   op: in
   values:
-  - 下午茶
-  - 午餐
+  - 约会
+  - 聚会
   - 聚餐
 taste:
-  desc: Stage 1 taste values (7 unique)
+  desc: Stage 1 taste values (10 unique)
   op: in
   values:
+  - 咸鲜
+  - 孜然
   - 清淡
-  - 烟熏
+  - 烧烤
+  - 甘
   - 甜
   - 苦
-  - 辣
+  - 葱香
   - 酱香
   - 鲜

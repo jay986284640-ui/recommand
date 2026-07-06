@@ -21,6 +21,9 @@ training_data_synonym:
         - Opr_Psn_Id
         - creator
         - updatePerson
+    csv:
+      csv_dir: ../../knowledge_database   # CSV 文件目录（相对路径，相对于 CWD）
+      delimiter: ","
     mock:
       fixture_dir: ./tests/fixtures/hive/
     item_types: [meituan_shop]
@@ -50,14 +53,14 @@ training_data_synonym:
     failures_path: ./sft_failures.jsonl
     cold_start_path: ./cold_start_items.jsonl
     count_per_item: 8                  # 5~12
-    max_message_turns: 5               # 1~5(本版从 4 上调至 5)
+    max_message_turns: 6               # 1~6
     turn_distribution: [0.10, 0.20, 0.35, 0.25, 0.10]
     negative_ratio: 0.10
     negative_types: [reject, pivot, unsatisfiable]
     llm:
       model: deepseek-chat
       provider: openai_compat
-      api_key: sk-ef5f2293bc234e5c8bf21346a1e9065c
+      api_key: 
       base_url: https://api.deepseek.com/v1
       timeout_seconds: 30
       max_tokens: 2048

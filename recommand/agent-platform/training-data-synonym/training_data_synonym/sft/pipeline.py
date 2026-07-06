@@ -246,38 +246,38 @@ class SFTPipeline:
     def _build_target_params(
         self, item: ItemTags, negative: bool, negative_type: Optional[str]
     ) -> dict:
-        """Build target params from item's 8-dim tags.
+        """Build target params from item tags in array format.
 
-        Non-distance dims: pulled directly from item.tags (modulated by intent).
-        distance: sampled via DistanceSampler.
-        consumable_type: derived if available, else None.
+        Each field is either null or an array of {op, values} objects.
+        Text fields use "contains" / "not contains", numeric use between/gte/lte.
         """
         params: dict = {d: None for d in DIM_ORDER}
 
         # All non-distance dims (verbatim from item.tags)
         for d in DIM_ORDER:
-            if d == "distance":
+            if d in ("distance", "age"):
                 continue
             v = item.tags.get(d)
-            if v is not None:
-                if d == "consumable_type":
-                    params[d] = {"op": "eq", "values": v}
-                elif d == "taste":
-                    params[d] = {"op": "contains", "values": v}
-                else:
-                    params[d] = {"op": "in", "values": [v] if isinstance(v, str) else v}
+            if v is None:
+                continue
+            if isinstance(v, list):
+                params[d] = [{"op": "contains", "values": v}]
+            else:
+                params[d] = [{"op": "contains", "values": [v]}]
 
-        # distance sampled
-        params["distance"] = self.distance_sampler.sample_distance_param(is_negative=negative)
+        # distance sampled (numeric, uses between/lte/gte)
+        dist = self.distance_sampler.sample_distance_param(is_negative=negative)
+        if dist is not None:
+            params["distance"] = [dist]
 
-        # Negative modulation: force a not_in for taste if reject
-        if negative and negative_type == "reject" and params.get("taste"):
-            # Append a not_in dimension
-            taste_list = params["taste"].get("values", [])
-            if taste_list:
-                # Pick one taste to forbid
-                forbidden = self._rng.choice(taste_list)
-                params["taste"] = {"op": "not_in", "values": [forbidden]}
+        # avg_prc: numeric, convert raw value to price range
+        if item.tags.get("avg_prc") and params.get("avg_prc"):
+            raw_price = item.tags["avg_prc"]
+            try:
+                p = int(raw_price)
+                params["avg_prc"] = [{"op": "between", "values": [max(0, p - 10), p + 10]}]
+            except (ValueError, TypeError):
+                pass
 
         return params
 
@@ -286,12 +286,10 @@ class SFTPipeline:
         v = item.tags.get(missing_dim)
         if v is None:
             return params
-        if missing_dim == "consumable_type":
-            params[missing_dim] = {"op": "eq", "values": v}
-        elif missing_dim == "taste":
-            params[missing_dim] = {"op": "contains", "values": v}
+        if isinstance(v, list):
+            params[missing_dim] = [{"op": "contains", "values": v}]
         else:
-            params[missing_dim] = {"op": "in", "values": [v] if isinstance(v, str) else v}
+            params[missing_dim] = [{"op": "contains", "values": [v]}]
         return params
 
     def _generate_one(
@@ -308,17 +306,17 @@ class SFTPipeline:
         forced: bool,
         covered_dims_override: Optional[list[str]] = None,
     ) -> Optional[SFTSample]:
-        item_tags_dict = {"item_id": item.item_id, "tags": item.tags, "item_type": item.item_type.value}
-        messages, covered = self.llm_generator.generate(
-            item_tags_dict=item_tags_dict,
-            target_intent=target_intent,
+        item_name = str(item.raw_record.get("str_nm") or item.raw_record.get("shopname") or "")
+        messages, guide_text = self.llm_generator.generate(
             target_params=target_params,
-            target_order_by=target_order_by,
             target_turns=target_turns,
-            negative_type=negative_type,
-            sentence_template=template,
+            item_name=item_name,
             item_id=item.item_id,
         )
+        covered = list({
+            k for k, v in target_params.items()
+            if v is not None and k not in ("distance", "order_by")
+        })
         if covered_dims_override:
             covered = list(set(covered) | set(covered_dims_override))
         sample = SFTSample(
@@ -327,6 +325,7 @@ class SFTPipeline:
             intent=target_intent,
             messages=messages,
             params=target_params,
+            guide_text=guide_text,
             order_by=target_order_by,
             negative=negative,
             negative_type=negative_type,

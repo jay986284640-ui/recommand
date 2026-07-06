@@ -222,17 +222,19 @@ class OpenAICompatValidationError(OpenAICompatError):
 _DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
 
-def _extract_json(text: str) -> dict[str, Any]:
-    """Strip ```json ... ``` fences (if any) and parse as JSON dict.
+def _extract_json(text: str) -> dict[str, Any] | list[Any]:
+    """Strip ```json ... ``` fences (if any) and parse as JSON.
+
+    Returns a dict or list.  Callers that need a dict MUST validate
+    the type themselves via :func:`validate_complete_response`.
 
     Raises:
         json.JSONDecodeError: when content is not valid JSON.
-        ValidationError: when the parsed payload is not a dict.
+        ValidationError: when the parsed payload is neither dict nor list.
     """
-    print(text)
     s = (text or "").strip()
     # Strip a leading ```json (or ```) fence
-    s = re.sub(r"<think>.*?</think>\n\n", "", s, flags=re.IGNORECASE | re.DOTALL)
+    s = re.sub(r"<think>.*?</think>\s*", "", s, flags=re.IGNORECASE | re.DOTALL)
     if s.startswith("```"):
         # drop opening fence line
         first_nl = s.find("\n")
@@ -243,8 +245,8 @@ def _extract_json(text: str) -> dict[str, Any]:
             s = s[:-3]
         s = s.strip()
     data = json.loads(s)
-    if not isinstance(data, dict):
-        raise ValidationError(f"LLM response is not a dict: {type(data).__name__}")
+    if not isinstance(data, (dict, list)):
+        raise ValidationError(f"LLM response is not a dict or list: {type(data).__name__}")
     return data
 
 
@@ -499,10 +501,10 @@ def build_llm_client(
 # --- thin helpers ---------------------------------------------------------
 
 
-def validate_complete_response(payload: Any) -> dict[str, Any]:
-    """Ensure payload is a dict (catches LLM returning a list / scalar)."""
-    if not isinstance(payload, dict):
-        raise ValidationError(f"LLM response is not a dict: {type(payload).__name__}")
+def validate_complete_response(payload: Any) -> dict[str, Any] | list[Any]:
+    """Ensure payload is a dict or list (catches LLM returning a scalar)."""
+    if not isinstance(payload, (dict, list)):
+        raise ValidationError(f"LLM response is not a dict or list: {type(payload).__name__}")
     return payload
 
 
