@@ -24,16 +24,11 @@
 按类型生成
 --------------------------------------------------
 
-## 品类词（如 咖啡、火锅、凉茶）
-同一品类本身的不同叫法：中文别名、英文。
+## 品类/菜系词（如 咖啡、火锅、川菜、粤菜、日料）
+同一品类或菜系的不同叫法：中文别名、英文。
   咖啡 → {"synonyms": ["咖啡", "coffee"]}
   火锅 → {"synonyms": ["火锅", "hotpot", "hot pot", "涮锅"]}
-  凉茶 → {"synonyms": ["凉茶", "herbal tea"]}
-
-## 菜系词（如 川菜、粤菜、日料）
-同一菜系的不同叫法：中文别名、英文。
   粤菜 → {"synonyms": ["粤菜", "广东菜", "Cantonese food", "Cantonese cuisine"]}
-  川菜 → {"synonyms": ["川菜", "四川菜", "Sichuan food", "Sichuan cuisine"]}
   日料 → {"synonyms": ["日料", "日本料理", "Japanese cuisine", "Japanese food"]}
 
 ## 口味词（如 麻辣、甜、孜然）

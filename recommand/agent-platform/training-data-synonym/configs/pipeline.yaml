@@ -34,6 +34,8 @@ training_data_synonym:
     output_path: ./item_tags.jsonl
     failures_path: ./tag_enrichment_failures.jsonl
     state_path: ./tag_enrichment_state.parquet
+    batch_size: 50                     # 每批处理行数，决定文件写入频率
+    concurrency: 4                     # LLM 并发数
     llm:
       model: deepseek-chat
       provider: openai_compat
@@ -53,10 +55,14 @@ training_data_synonym:
     failures_path: ./sft_failures.jsonl
     cold_start_path: ./cold_start_items.jsonl
     count_per_item: 8                  # 5~12
-    max_message_turns: 6               # 1~6
+    max_message_turns: 5               # 最多5轮
     turn_distribution: [0.10, 0.20, 0.35, 0.25, 0.10]
     negative_ratio: 0.10
     negative_types: [reject, pivot, unsatisfiable]
+    coverage:                          # 字典值覆盖配置
+      min_per_value: 2                 # 每个字典值至少出现次数
+      positive_ratio: 0.6              # 包含(正向) / 不包含(反选) 比例
+      store_name_ratio: 0.15           # 含门店名搜索的语料比例
     llm:
       model: deepseek-chat
       provider: openai_compat
@@ -68,21 +74,13 @@ training_data_synonym:
       temperature: 0.7                 # 多样性要高
       forced_coverage: true            # FR-011 强制覆盖
       template_repeat_limit: 0.20      # SC-007
-    distance_sampling:                 # FR-013b — 与 lng/lat 解耦的字典采样
+    distance_sampling:                 # 距离参数采样
       distance_param_ratio: 0.30
       distance_bucket_weights:
         "0-500":     0.25
         "500-1000":  0.25
         "1000-3000": 0.25
         "3000+":     0.25
-      order_by_distribution:
-        distance: 0.30
-        price:    0.20
-        rating:   0.15
-        time:     0.10
-        null:     0.25
-      order_by_distance_when_param_present: 0.60
-      order_by_distance_when_param_null:    0.05
 
   cleaning:
     enabled: true

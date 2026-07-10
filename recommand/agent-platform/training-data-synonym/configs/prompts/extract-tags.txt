@@ -18,9 +18,14 @@
 - 消费场景根据餐厅类型推断,中等以上置信度即可输出
 - 不知道的字段填 null
 
-<think>分析门店名称...</think>
-
+需要输出的json标签有:
 {fields_schema}
 
 原始信息:
 {raw_record}
+
+按照以下格式输出内容
+<think>分析门店名称...</think> \n\n ```json\n{json标签}\n```
+
+请开始你的推测:
+<think>

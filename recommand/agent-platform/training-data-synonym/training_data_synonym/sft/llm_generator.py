@@ -16,17 +16,40 @@ from ..data_model import MessageTurn
 
 logger = get_logger(__name__)
 
-# Field definitions injected into the prompt so the LLM understands
-# the parameter schema without hardcoding it in the template.
-FIELD_DEFINITIONS = """1. **category**: 核心品类（如：咖啡、火锅、烧烤、奶茶）
-2. **brand**: 品牌或店名（如：星巴克、麦当劳、肯德基、喜茶）
-3. **distance**: 距离要求（单位km）
-4. **avg_prc**: 人均价格要求（单位元）
-5. **taste**: 口味偏好（如：甜、辣、清淡、酱香）
-6. **cuisine**: 菜系类型（如：川菜、粤菜、日料、西餐）
-7. **occasion**: 消费场景（如：环境好、聚餐、亲子、约会、生日、节日）
-8. **meal_time**: 用餐时段（如：早餐、午餐、下午茶、晚餐、夜宵）
-9. **consumable_type**: 食饮类型（food / drink / mixed）"""
+
+def build_field_definitions(dim_dictionary: dict, passthrough_fields: list[str]) -> str:
+    """Build field definition text dynamically from dictionary + passthrough columns.
+
+    Args:
+        dim_dictionary: The ``dim_dictionary_snapshot.yaml`` content.
+        passthrough_fields: Column names from ``tables.yaml`` to pass through
+            (e.g. ``["distance", "avg_prc"]``).
+
+    Returns:
+        Multi-line numbered field definition string for the SFT prompt.
+    """
+    lines: list[str] = []
+    idx = 1
+
+    for dim_name, dim_info in dim_dictionary.items():
+        if dim_name.startswith("_"):
+            continue
+        desc = dim_info.get("desc", dim_name) if isinstance(dim_info, dict) else dim_name
+        vals = dim_info.get("values", []) if isinstance(dim_info, dict) else []
+        examples = ", ".join(str(v) for v in vals[:8])
+        lines.append(f"{idx}. **{dim_name}**: {desc}（如：{examples}）")
+        idx += 1
+
+    for col in passthrough_fields:
+        if col == "distance":
+            lines.append(f"{idx}. **distance**: 距离要求（单位km，如：0-500, 500-1000）")
+        elif col == "avg_prc":
+            lines.append(f"{idx}. **avg_prc**: 人均价格要求（单位元）")
+        elif col == "store_name":
+            lines.append(f"{idx}. **store_name**: 门店名称模糊搜索（兜底检索字段，用户可能只记得部分店名）")
+        idx += 1
+
+    return "\n".join(lines)
 
 
 def build_sft_prompt(
@@ -35,6 +58,7 @@ def build_sft_prompt(
     target_turns: int,
     item_name: str = "",
     prompt_template: str,
+    field_definitions: str,
 ) -> str:
     """Build the parameter-extraction dialogue generation prompt."""
     params_json = json.dumps(target_params, ensure_ascii=False, indent=2)
@@ -43,7 +67,7 @@ def build_sft_prompt(
         prompt_template
         .replace("{target_params}", params_json)
         .replace("{target_turns}", str(target_turns))
-        .replace("{field_definitions}", FIELD_DEFINITIONS)
+        .replace("{field_definitions}", field_definitions)
     )
 
 
@@ -72,9 +96,11 @@ class LLMGenerator:
         self,
         llm_client: LLMClient,
         prompt_template: str,
+        field_definitions: str = "",
     ) -> None:
         self._llm = llm_client
         self._template = prompt_template
+        self._field_definitions = field_definitions
 
     @property
     def model_name(self) -> str:
@@ -94,6 +120,7 @@ class LLMGenerator:
             target_turns=target_turns,
             item_name=item_name,
             prompt_template=self._template,
+            field_definitions=self._field_definitions,
         )
         resp = self._llm.complete(prompt, temperature=0.7, item_id=item_id)
         if not isinstance(resp, dict):
@@ -104,6 +131,6 @@ class LLMGenerator:
 __all__ = [
     "LLMGenerator",
     "build_sft_prompt",
+    "build_field_definitions",
     "parse_sft_response",
-    "FIELD_DEFINITIONS",
 ]

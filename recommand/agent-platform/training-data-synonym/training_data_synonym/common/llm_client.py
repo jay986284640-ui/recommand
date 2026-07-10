@@ -222,32 +222,49 @@ class OpenAICompatValidationError(OpenAICompatError):
 _DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
 
-def _extract_json(text: str) -> dict[str, Any] | list[Any]:
-    """Strip ```json ... ``` fences (if any) and parse as JSON.
+_JSON_FENCE_RE = re.compile(r'```(?:json)?\s*\n?(.*?)\n?```', re.DOTALL)
 
-    Returns a dict or list.  Callers that need a dict MUST validate
-    the type themselves via :func:`validate_complete_response`.
+
+def _extract_json(text: str) -> dict[str, Any] | list[Any]:
+    """Extract and parse the JSON payload from LLM response text.
+
+    1. Prefer `` ```json ... ``` `` fence content.
+    2. Fallback: find first ``{`` or ``[``, use ``raw_decode``.
 
     Raises:
-        json.JSONDecodeError: when content is not valid JSON.
+        json.JSONDecodeError: when no valid JSON found or parse fails.
         ValidationError: when the parsed payload is neither dict nor list.
     """
     s = (text or "").strip()
-    # Strip a leading ```json (or ```) fence
-    s = re.sub(r"<think>.*?</think>\s*", "", s, flags=re.IGNORECASE | re.DOTALL)
-    if s.startswith("```"):
-        # drop opening fence line
-        first_nl = s.find("\n")
-        if first_nl != -1:
-            s = s[first_nl + 1 :]
-        # drop closing fence
-        if s.endswith("```"):
-            s = s[:-3]
-        s = s.strip()
-    data = json.loads(s)
-    if not isinstance(data, (dict, list)):
-        raise ValidationError(f"LLM response is not a dict or list: {type(data).__name__}")
-    return data
+
+    # 1. Try ```json ... ``` or ``` ... ``` fence
+    m = _JSON_FENCE_RE.search(s)
+    if m:
+        inner = m.group(1).strip()
+        if inner:
+            try:
+                data = json.loads(inner)
+                if isinstance(data, (dict, list)):
+                    return data
+                raise ValidationError(
+                    f"fence content not dict or list: {type(data).__name__}"
+                )
+            except json.JSONDecodeError:
+                pass  # fall through to fallback
+
+    # 2. Fallback: first {…} or […] via raw_decode
+    for start_char in ("{", "["):
+        idx = s.find(start_char)
+        if idx == -1:
+            continue
+        try:
+            data, _end = json.JSONDecoder().raw_decode(s[idx:])
+            if isinstance(data, (dict, list)):
+                return data
+        except json.JSONDecodeError:
+            continue
+
+    raise json.JSONDecodeError("No JSON found", s, 0)
 
 
 class OpenAICompatClient(LLMClient):
@@ -404,15 +421,17 @@ class OpenAICompatClient(LLMClient):
         try:
             data = _extract_json(content)
         except (json.JSONDecodeError, ValidationError) as e:
+            # Include raw LLM output in error for debugging
+            raw_preview = content[:500] if content else "(empty)"
             self._log_outcome(
                 item_id=item_id,
                 latency_ms=int((time.perf_counter() - t0) * 1000),
                 token_in=(payload.get("usage") or {}).get("prompt_tokens"),
                 token_out=(payload.get("usage") or {}).get("completion_tokens"),
                 outcome="validation_error",
-                error=str(e),
+                error=f"{e} | raw: {raw_preview}",
             )
-            raise
+            raise OpenAICompatValidationError(f"{e}\nLLM raw output: {raw_preview}") from e
 
         usage = payload.get("usage") or {}
         self._log_outcome(

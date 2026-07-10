@@ -1,0 +1,84 @@
+# 运营行为排查与清洗 - 兴业生活(美团门店券)CSV 配置
+#
+# 数据来源:profile_extract.sql 落盘的两份 CSV
+#   item_profile.csv   门店/券画像
+#   user_seq.csv       用户行为序列
+#
+# 跑法:
+#   python run_campaign_audit.py --config config/datasets/xingye_coupon_csv.yaml
+
+data:
+  adapter: xingye_coupon_csv
+  adapter_config:
+    # ↓↓↓ 改成真实 CSV 路径(可为目录或通配)
+    items_path: /path/to/item_profile.csv
+    interactions_path: /path/to/user_seq.csv
+
+    time_format: s              # event_time 为 10 位秒级
+    item_id_column: item_id
+    item_name_column: item_nm
+    interaction_user_column: custref_no
+    interaction_item_column: item_id
+    interaction_time_column: event_time
+
+    impression_event: showPage  # 曝光事件 → action=impression
+    click_event: Click          # 点击事件,真实行为看 btn_nm
+    default_click_action: click
+    # EDA 拿到 btn_nm 词表后在此补映射,例如:
+    # btn_action_mapping:
+    #   收藏: favorite
+    #   领取: receive
+    #   立即购买: buy
+
+output:
+  dir: ./pipeline_output/campaign_audit
+
+spark:
+  master: local[*]
+  memory: 4g
+  partitions: 8
+
+# 检测器阈值(先用默认,EDA 后按分位数微调)
+detectors:
+  item_popularity_anomaly:
+    enabled: true
+    popularity_pct: 0.99                 # 交互量 Top1% 视为热门候选
+    min_interactions_for_hot: 500        # 热门下限(与分位取大)
+    interaction_per_user_threshold: 3.0  # 交互/去重用户 比值上限
+
+  item_time_burst:
+    enabled: true
+    bucket: hour                         # hour / day
+    spike_ratio_threshold: 5.0           # 最忙桶/均值桶
+    min_burst_count: 100                 # 突刺最小绝对量
+    top_bucket_share_threshold: 0.5      # 单桶占全量比例
+
+  item_funnel_stats:
+    enabled: true
+    funnel_actions: [impression, click]  # 补映射后可加 favorite/receive/buy
+    min_impressions: 200
+    ctr_z_threshold: 3.0
+    ctr_hard_cap: 1.0
+
+  user_velocity_anomaly:
+    enabled: true
+    max_daily_threshold: 100             # 单日交互上限
+    max_hourly_threshold: 50             # 单小时交互上限
+
+  geo_mismatch:
+    enabled: false                       # 可选,需用户经纬度可靠
+    far_km: 50
+    far_share_threshold: 0.5
+    p90_km_threshold: 100
+    min_interactions: 50
+
+scoring:
+  min_score: 1                           # 命中几个维度即判运营商品
+
+cleaning:
+  enabled: true
+  drop_campaign_items: true
+  drop_abnormal_users: true
+  downsample_campaign_items: false       # 与 drop_campaign_items 二选一
+  cap_per_item: 500
+  output_format: parquet

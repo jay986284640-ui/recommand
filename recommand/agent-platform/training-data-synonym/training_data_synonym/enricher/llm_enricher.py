@@ -170,9 +170,6 @@ class LLMEnricher:
             input_fields=self._input_fields,
             few_shot=self._few_shot,
         )
-        logger.info("llm_prompt", extra={
-            "stage": "enrich", "item_id": item_id, "prompt": prompt,
-        })
         try:
             resp = self._llm.complete(prompt, temperature=0.3, item_id=item_id)
             validate_complete_response(resp)

@@ -137,7 +137,6 @@ class EnrichmentPipeline:
             {"field": "category", "desc": "品类", "multiple": False},
             {"field": "brand", "desc": "品牌", "multiple": False},
             {"field": "taste", "desc": "口味", "multiple": True},
-            {"field": "cuisine", "desc": "菜系", "multiple": False},
             {"field": "occasion", "desc": "场合", "multiple": False},
             {"field": "consumable_type", "desc": "食饮类型", "multiple": False},
         ]

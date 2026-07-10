@@ -29,3 +29,4 @@ from . import kuairand
 from . import amazon23
 from . import amazon
 from . import xingye_coupon
+from . import xingye_coupon_csv

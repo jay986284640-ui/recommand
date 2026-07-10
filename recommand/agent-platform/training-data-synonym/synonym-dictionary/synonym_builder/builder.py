@@ -45,31 +45,25 @@ def _load_item_profile(profile_path: Path) -> list[dict]:
     return items
 
 
-def _collect_all_tags(items: list[dict]) -> dict[str, set[str]]:
-    """Collect unique values from all AI-generated tag dimensions."""
-    collected: dict[str, set[str]] = {
-        "brand": set(),
-        "category": set(),
-        "cuisine": set(),
-        "taste": set(),
-        "occasion": set(),
-    }
+def _collect_tags(items: list[dict], dims: list[str]) -> dict[str, set[str]]:
+    """Collect unique values for *dims* from item profiles.
+
+    Scalar dims (brand, category) → single string value.
+    List dims (taste, occasion) → each element counted separately.
+    """
+    collected: dict[str, set[str]] = {d: set() for d in dims}
 
     for item in items:
-        for field in ("brand", "category", "cuisine"):
-            v = item.get(field)
-            if v and isinstance(v, str) and v.strip():
-                collected[field].add(v.strip())
-
-        for field in ("taste", "occasion"):
-            v = item.get(field)
-            if v:
-                if isinstance(v, list):
-                    for t in v:
-                        if t and str(t).strip():
-                            collected[field].add(str(t).strip())
-                elif isinstance(v, str) and v.strip():
-                    collected[field].add(v.strip())
+        for dim in dims:
+            v = item.get(dim)
+            if v is None:
+                continue
+            if isinstance(v, list):
+                for t in v:
+                    if t and str(t).strip():
+                        collected[dim].add(str(t).strip())
+            elif isinstance(v, str) and v.strip():
+                collected[dim].add(v.strip())
 
     return collected
 
@@ -109,7 +103,7 @@ def _parse_synonym_response(payload: Any) -> list[str]:
             return [str(x).strip() for x in raw if x and str(x).strip()]
         # Legacy multi-key format
         all_syns: list[str] = []
-        for key in ("brand_synonyms", "category_synonyms", "cuisine_synonyms",
+        for key in ("brand_synonyms", "category_synonyms",
                      "taste_synonyms", "occasion_synonyms"):
             raw = payload.get(key)
             if isinstance(raw, list):
@@ -228,9 +222,6 @@ def _write_meta(out_dir: Path, *, total_groups: int, total_written: int,
 # Main
 # ---------------------------------------------------------------------------
 
-_ALL_DIMS = ["brand", "category", "cuisine", "taste", "occasion"]
-
-
 def build_synonyms(
     *,
     profile_path: str | Path,
@@ -262,22 +253,30 @@ def build_synonyms(
 
     # ---- load ----
     items = _load_item_profile(profile)
-    tags = _collect_all_tags(items)
+    dim_data = _load_dim_dict(dim_dict)
+
+    # Discover dimensions dynamically from snapshot (exclude _meta)
+    dims = sorted(k for k in dim_data if not k.startswith("_")) if dim_data else []
+    if not dims:
+        # Fallback: discover from first item's keys
+        if items:
+            known = {"brand", "category", "taste", "occasion", "cuisine", "consumable_type"}
+            dims = sorted(k for k in items[0] if k in known)
+
+    tags = _collect_tags(items, dims)
     template = prompt_path.read_text(encoding="utf-8")
 
     # Supplement from dim dictionary
-    dim_data = _load_dim_dict(dim_dict)
-    if dim_data:
-        for dim_name in _ALL_DIMS:
-            dim_vals = (dim_data.get(dim_name) or {}).get("values", []) or []
-            for v in dim_vals:
-                if v and str(v).strip():
-                    tags[dim_name].add(str(v).strip())
+    for dim_name in dims:
+        dim_vals = (dim_data.get(dim_name) or {}).get("values", []) or []
+        for v in dim_vals:
+            if v and str(v).strip():
+                tags[dim_name].add(str(v).strip())
 
     # ---- summary ----
-    total_terms = sum(len(tags[d]) for d in _ALL_DIMS)
+    total_terms = sum(len(tags[d]) for d in dims)
     print(f"Generating synonyms via LLM ({llm_client.model_name}):")
-    for d in _ALL_DIMS:
+    for d in dims:
         print(f"  {d:16s} {len(tags[d]):>4} terms")
     print(f"  {'TOTAL':16s} {total_terms:>4} LLM calls")
 
@@ -285,7 +284,7 @@ def build_synonyms(
     stats: dict[str, int] = {}
     all_groups: list[list[str]] = []
 
-    for dim_name in _ALL_DIMS:
+    for dim_name in dims:
         terms = tags[dim_name]
         if not terms:
             stats[f"{dim_name}_terms"] = 0

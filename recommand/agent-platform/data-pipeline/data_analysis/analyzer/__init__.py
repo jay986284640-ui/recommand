@@ -26,5 +26,11 @@ from . import user_rating_trend
 from . import user_review_count
 from . import verified_purchase
 from . import weekday_rating
+# 运营行为排查检测器(新增,不影响既有美团/Amazon 分析器)
+from . import item_popularity_anomaly
+from . import item_time_burst
+from . import item_funnel_stats
+from . import user_velocity_anomaly
+from . import geo_mismatch
 from .base import BaseAnalyzer
 from .factory import AnalyzerFactory

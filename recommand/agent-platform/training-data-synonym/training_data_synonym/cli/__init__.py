@@ -513,14 +513,32 @@ def cmd_sft(args) -> int:
     llm = build_llm_client(**settings)
     from ..sft.pipeline import SFTPipeline
 
+    # Resolve dict_snapshot path
+    dict_snapshot = (
+        Path(args.dict_snapshot)
+        if getattr(args, "dict_snapshot", None)
+        else Path("output/stage1/dim_dictionary_snapshot.yaml")
+    )
+    if not dict_snapshot.exists():
+        print(f"WARNING: dim_dictionary_snapshot.yaml not found: {dict_snapshot}")
+        print(f"  Run Stage 1 extract-tags first for better coverage")
+        dict_snapshot = None
+
+    sft_cfg = (cfg.pipeline.get("training_data_synonym") or {}).get("sft") or {}
+    coverage_cfg = sft_cfg.get("coverage") or {}
+
     pipeline = SFTPipeline(
         config=cfg,
         llm_client=llm,
         input_path=args.input,
         output_dir=args.output_dir,
+        dict_snapshot_path=str(dict_snapshot) if dict_snapshot else None,
+        tables_config_path=args.tables_config,
         count_per_item=getattr(args, "count_per_item", 8),
-        max_message_turns=getattr(args, "max_message_turns", 6),
+        max_message_turns=getattr(args, "max_message_turns", 5),
         negative_ratio=getattr(args, "negative_ratio", 0.10),
+        coverage_min_samples_per_value=coverage_cfg.get("min_per_value", 2),
+        coverage_positive_ratio=coverage_cfg.get("positive_ratio", 0.6),
     )
     summary = pipeline.run()
     print(
@@ -904,10 +922,12 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser(
         "sft", help="Stage 3: 合成 SFT 数据 (item_tags → sft_corpus.jsonl)", parents=[parent]
     )
-    sp.add_argument("--input", type=Path, required=True, help="item_tags.jsonl from Stage 1")
+    sp.add_argument("--input", type=Path, required=True, help="item_tags.jsonl from Stage 1/2")
     sp.add_argument("--output-dir", type=Path, default=Path("./out_sft"))
+    sp.add_argument("--dict-snapshot", type=Path, default=None,
+                    help="Stage 1 dim_dictionary_snapshot.yaml for coverage planning")
     sp.add_argument("--count-per-item", type=int, default=8)
-    sp.add_argument("--max-message-turns", type=int, default=6)
+    sp.add_argument("--max-message-turns", type=int, default=5)
     sp.add_argument("--negative-ratio", type=float, default=0.10)
     sp.add_argument("--seed", type=int, default=42)
     sp.set_defaults(func=cmd_sft)

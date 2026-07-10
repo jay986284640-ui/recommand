@@ -114,7 +114,6 @@ DIM_ORDER = (
     "avg_prc",
     "distance",
     "age",
-    "cuisine",
     "meal_time",
     "occasion",
     "taste",
@@ -128,7 +127,6 @@ TAG_SOURCE_ALLOWED: dict[str, set[str]] = {
     "avg_prc": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
     "distance": {TagOrigin.GEO, TagOrigin.MISSING},
     "age": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
-    "cuisine": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
     "meal_time": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
     "occasion": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
     "taste": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
@@ -143,7 +141,6 @@ class TagSource:
     avg_prc: TagOrigin
     distance: TagOrigin
     age: TagOrigin
-    cuisine: TagOrigin
     meal_time: TagOrigin
     occasion: TagOrigin
     taste: TagOrigin
@@ -156,7 +153,6 @@ class TagSource:
             "avg_prc": self.avg_prc.value,
             "distance": self.distance.value,
             "age": self.age.value,
-            "cuisine": self.cuisine.value,
             "meal_time": self.meal_time.value,
             "occasion": self.occasion.value,
             "taste": self.taste.value,
