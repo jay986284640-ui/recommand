@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from training_data_synonym.data_model import DIM_ORDER, Role, TagOrigin
-from training_data_synonym.enricher.tag_schema import assemble_item_tags
+from training_data.data_model import DIM_ORDER, Role, TagOrigin
+from training_data.enricher.tag_schema import assemble_item_tags
 
 
 def test_invariant_non_distance():

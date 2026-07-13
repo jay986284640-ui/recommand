@@ -6,7 +6,7 @@ taste / occasion, plus the ``compute_name_hints`` aggregate entry point.
 
 from __future__ import annotations
 
-from training_data_synonym.enricher.name_inference import (
+from training_data.enricher.name_inference import (
     compute_name_hints,
     get_product_name,
     infer_brand,

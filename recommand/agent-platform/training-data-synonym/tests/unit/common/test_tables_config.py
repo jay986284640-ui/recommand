@@ -1,4 +1,4 @@
-"""Unit tests for ``training_data_synonym.common.tables_config`` (Part A).
+"""Unit tests for ``training_data.common.tables_config`` (Part A).
 
 Covers the validation rules:
 - missing file → TablesConfigError
@@ -17,12 +17,12 @@ import textwrap
 
 import pytest
 
-from training_data_synonym.common.tables_config import (
+from training_data.common.tables_config import (
     TablesConfigError,
     derive_sensitive_blocklist,
     load_tables_config,
 )
-from training_data_synonym.data_model import Role
+from training_data.data_model import Role
 
 
 def test_valid_yaml_loads(tmp_path, repo_root):

@@ -1,4 +1,4 @@
-"""Top-level CLI for training-data-synonym (per Constitution Principle II).
+"""Top-level CLI for training-data (per Constitution Principle II).
 
 Subcommands:
   tables-meta       — YAML tables → tables_meta.json
@@ -44,7 +44,7 @@ def _resolve_llm_settings(cfg: Config, args, stage: str) -> dict:
 
     Returns a kwargs dict suitable for :func:`build_llm_client`.
     """
-    llm_cfg = cfg.pipeline.get("training_data_synonym") or {}
+    llm_cfg = cfg.pipeline.get("training_data") or {}
     llm_cfg = (llm_cfg.get(stage) or {}).get("llm") or {}
 
     # provider
@@ -156,7 +156,7 @@ def _build_hive_reader(args, configs_dir: Path):
         if csv_dir is None:
             try:
                 cfg = Config.load(args.configs_dir)
-                csv_cfg = ((cfg.pipeline.get("training_data_synonym") or {}).get("input") or {}).get("csv") or {}
+                csv_cfg = ((cfg.pipeline.get("training_data") or {}).get("input") or {}).get("csv") or {}
                 csv_dir = csv_cfg.get("csv_dir") or "../../knowledge_database"
                 csv_delimiter = csv_cfg.get("delimiter") or csv_delimiter
             except Exception:
@@ -306,7 +306,7 @@ def _extract_tags_impl(args) -> int:
     sample_n = getattr(args, "n_items_per_type", None)
     if sample_n is None:
         cfg = Config.load(args.configs_dir)
-        input_cfg = (cfg.pipeline.get("training_data_synonym") or {}).get("input") or {}
+        input_cfg = (cfg.pipeline.get("training_data") or {}).get("input") or {}
         sample_n = input_cfg.get("sample_n_per_type")  # may be None → all
     label = sample_n if sample_n is not None else "all"
     print(f"=== Stage 1 Phase 1: LLM free-form enrich ({label}/type) ===")
@@ -356,7 +356,7 @@ def _extract_tags_impl(args) -> int:
     # Read item_types from pipeline config so Phase 2 only queries tables
     # the user actually has data for (instead of requiring all 3 roles).
     cfg = Config.load(args.configs_dir)
-    input_cfg = (cfg.pipeline.get("training_data_synonym") or {}).get("input") or {}
+    input_cfg = (cfg.pipeline.get("training_data") or {}).get("input") or {}
     item_types = input_cfg.get("item_types")  # None → all tables
 
     # Phase 1 wrote item_tags.jsonl → feed the LLM tags into Phase 2 so
@@ -369,7 +369,7 @@ def _extract_tags_impl(args) -> int:
     csv_dir = getattr(args, "csv_dir", None)
     csv_delimiter = getattr(args, "csv_delimiter", None) or ","
     if csv_dir is None:
-        csv_cfg = ((cfg.pipeline.get("training_data_synonym") or {}).get("input") or {}).get("csv") or {}
+        csv_cfg = ((cfg.pipeline.get("training_data") or {}).get("input") or {}).get("csv") or {}
         csv_dir = csv_cfg.get("csv_dir") or "../../knowledge_database"
         csv_delimiter = csv_cfg.get("delimiter") or csv_delimiter
 
@@ -452,15 +452,10 @@ def cmd_generate_synonyms(args) -> int:
     from synonym_builder import build_synonyms
 
     # ---- resolve paths ----
-    profile = Path(getattr(args, "input", None) or "output/stage1/item_profile.jsonl")
-    if not profile.exists():
-        print(f"ERROR: item_profile.jsonl not found: {profile}", file=sys.stderr)
-        return 2
-
     dict_snapshot = (
         Path(args.dict_snapshot)
         if getattr(args, "dict_snapshot", None)
-        else Path(args.output_dir or "output/stage1") / "dim_dictionary_snapshot.yaml"
+        else Path("output/stage1/dim_dictionary_snapshot.yaml")
     )
     if not dict_snapshot.exists():
         print(f"ERROR: dim_dictionary_snapshot.yaml not found: {dict_snapshot}", file=sys.stderr)
@@ -493,7 +488,6 @@ def cmd_generate_synonyms(args) -> int:
 
     # ---- run ----
     stats = build_synonyms(
-        profile_path=profile,
         dim_dict_path=dict_snapshot,
         output_dir=output_dir,
         llm_client=llm,
@@ -524,7 +518,7 @@ def cmd_sft(args) -> int:
         print(f"  Run Stage 1 extract-tags first for better coverage")
         dict_snapshot = None
 
-    sft_cfg = (cfg.pipeline.get("training_data_synonym") or {}).get("sft") or {}
+    sft_cfg = (cfg.pipeline.get("training_data") or {}).get("sft") or {}
     coverage_cfg = sft_cfg.get("coverage") or {}
 
     pipeline = SFTPipeline(
@@ -561,7 +555,7 @@ def cmd_split(args) -> int:
     import hashlib
 
     cfg = Config.load(args.configs_dir)
-    split_cfg = (cfg.pipeline.get("training_data_synonym") or {}).get("split") or {}
+    split_cfg = (cfg.pipeline.get("training_data") or {}).get("split") or {}
     train_ratio = float(split_cfg.get("train_ratio", 0.8))
     val_ratio = float(split_cfg.get("val_ratio", 0.1))
     test_ratio = float(split_cfg.get("test_ratio", 0.1))
@@ -866,7 +860,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     p = argparse.ArgumentParser(
-        prog="training-data-synonym",
+        prog="training-data",
         description="兴业 O2O 三品类 SFT 语料生成流水线\n"
         "Stage 1 extract-tags → Stage 2 enrich → Stage 3 sft → split → verify",
         parents=[parent],
@@ -965,10 +959,9 @@ def build_parser() -> argparse.ArgumentParser:
     sp.set_defaults(func=cmd_split)
     sp = sub.add_parser(
         "generate-synonyms",
-        help="Stage 1 item_profile → synonyms_solr.txt (LLM-driven, ES retrieval)",
+        help="dim_dictionary_snapshot → synonyms_solr.txt (LLM-driven, ES retrieval)",
         parents=[parent],
     )
-    sp.add_argument("--input", type=Path, default=None, help="item_profile.jsonl path")
     sp.add_argument(
         "--output-dir", type=Path, default=None, help="output dir for synonyms_solr.txt"
     )

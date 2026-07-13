@@ -1,4 +1,4 @@
-"""Allow `python -m training_data_synonym.cli` to invoke main()."""
+"""Allow `python -m training_data.cli` to invoke main()."""
 
 import sys
 

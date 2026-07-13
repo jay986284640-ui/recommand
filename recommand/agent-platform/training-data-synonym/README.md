@@ -1,6 +1,6 @@
 # 训练数据生成 (兴业 O2O 三品类 SFT 语料) — v2.5.2
 
-**目录**: `agent-platform/training-data-synonym/`
+**目录**: `agent-platform/training-data/`
 **业务对齐**: 兴业银行信用卡 O2O 推荐系统
 **数据源**: Hive / CSV / Spark,通过 `configs/tables.yaml` 声明表结构和 LLM 推断字段
 **Spec**: v2.5.2 — **配置驱动 LLM 推断** / **表可任意扩展** / OpenAI 兼容 HTTP 客户端
@@ -65,7 +65,7 @@ tables:
 ### `configs/pipeline.yaml` — 运行参数
 
 ```yaml
-training_data_synonym:
+training_data:
   input:
     source: hive               # hive | mock | csv
     item_types: [meituan_shop] # 只跑哪种表
@@ -86,34 +86,34 @@ training_data_synonym:
 ## 全部 CLI 子命令
 
 ```bash
-cd /opt/recommand/recommand/agent-platform/training-data-synonym
+cd /opt/recommand/recommand/agent-platform/training-data
 PYTHONPATH=.
 
 # Stage 1: 全量标签抽取(LLM 推断 + 品牌频次统计)
-python3 -m training_data_synonym.cli extract-tags \
+python3 -m training_data.cli extract-tags \
     --tables-config configs/tables.yaml \
     --source hive --output-dir output/stage1 --frequency-min 1
 # → dim_dictionary_snapshot.yaml + brands_diff.yaml
 
 # Stage 2: 实际标注(字典约束)
-python3 -m training_data_synonym.cli enrich \
+python3 -m training_data.cli enrich \
     --tables-config configs/tables.yaml --source hive \
     --dict-snapshot output/stage1/dim_dictionary_snapshot.yaml \
     --output-dir output/stage2
 # → item_tags.jsonl + item_profile.jsonl
 
 # Stage 3: 合成 SFT 数据
-python3 -m training_data_synonym.cli sft \
+python3 -m training_data.cli sft \
     --input output/stage2/item_tags.jsonl --output-dir output/stage3
 
 # CSV 模式
-python3 -m training_data_synonym.cli enrich \
+python3 -m training_data.cli enrich \
     --tables-config configs/tables.yaml --source csv \
     --csv-dir /data/csv --csv-delimiter ',' --output-dir output/
 
 # Jupyter (注入已有 SparkSession)
-from training_data_synonym.enricher.pipeline import EnrichmentPipeline
-from training_data_synonym.hive_reader.spark_reader import SparkHiveReader
+from training_data.enricher.pipeline import EnrichmentPipeline
+from training_data.hive_reader.spark_reader import SparkHiveReader
 pipeline = EnrichmentPipeline(
     config=cfg, tables_config_path="configs/tables.yaml",
     hive_reader=SparkHiveReader(spark_session=spark),  # 用 Jupyter 的 spark
@@ -167,40 +167,40 @@ bash scripts/demo.sh
 
 ```bash
 # Stage 1 — 全量标签抽取(brand/category 从 Hive 抽取)
-python -m training_data_synonym.cli extract-tags \
+python -m training_data.cli extract-tags \
   --tables-config configs/tables.yaml \
   --source hive --hive-metastore-uri thrift://localhost:9083 \
   --output-dir ./dict_candidates --frequency-min 10
 # Review ./dict_candidates/brands_diff.yaml → 人工 promote 进 configs/*.yaml
 
 # Stage 2 — 实际标注数据(8 维标签,字典约束 LLM)
-python -m training_data_synonym.cli enrich \
+python -m training_data.cli enrich \
   --tables-config configs/tables.yaml \
   --source hive --hive-metastore-uri thrift://localhost:9083 \
   --output-dir ./out --n-items-per-type 100
 # 自动导出 ./out/dim_dictionary_snapshot.yaml (Stage2 → Stage3 桥梁)
 
 # Stage 2 with Stage 1 snapshot constraint:
-python -m training_data_synonym.cli enrich \
+python -m training_data.cli enrich \
   --tables-config configs/tables.yaml --source hive \
   --dict-snapshot ./dict_candidates/dim_dictionary_snapshot.yaml \
   --output-dir ./out
 
 # Stage 3 — 合成 SFT 数据(标签 → 多轮对话语料)
-python -m training_data_synonym.cli sft \
+python -m training_data.cli sft \
   --input ./out/item_tags.jsonl \
   --output-dir ./out --count-per-item 8 --max-message-turns 5
 
 # split — SFT 语料 → 80/10/10 split(SC-010 no-leak)
-python -m training_data_synonym.cli split \
+python -m training_data.cli split \
   --input ./out/sft_corpus.jsonl \
   --output-dir ./out
 
 # verify — SC self-check
-python -m training_data_synonym.cli verify --output-dir ./out
+python -m training_data.cli verify --output-dir ./out
 
 # 一键 3-Stage
-python -m training_data_synonym.cli all --source hive \
+python -m training_data.cli all --source hive \
   --tables-config configs/tables.yaml \
   --hive-metastore-uri thrift://localhost:9083 \
   --output-dir ./e2e --n-items-per-type 50 --count-per-item 4

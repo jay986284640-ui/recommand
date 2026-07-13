@@ -48,7 +48,7 @@
 >
 > **v2.5 变更(2026-06-26)**:
 > - 实体 1 的输入从 `tabale_structer.sql` DDL 解析改为 `configs/tables.yaml` 显式声明。
->   加载器:`training_data_synonym.common.tables_config.load_tables_config(path) → list[TableMeta]`。
+>   加载器:`training_data.common.tables_config.load_tables_config(path) → list[TableMeta]`。
 >   SQL 解析路径(`sql_parser.parser.parse_sql`)保留为 deprecated,新代码不再调用。
 > - `EnrichmentPipeline` / `extract-dictionary` 同时接受 `--tables-config`(新)和 `--sql`(legacy)两个 flag。
 > - `dim_dictionary.yaml` 中 merchant 取值从 19 扩展到 82;occasion 13;taste 14(新增 凉/微辣/通勤)。

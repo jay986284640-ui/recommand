@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from training_data_synonym.common.versioning import ITEM_TAGS_V
-from training_data_synonym.data_model import DIM_ORDER
+from training_data.common.versioning import ITEM_TAGS_V
+from training_data.data_model import DIM_ORDER
 
 
 SENSITIVE_COLUMNS = [
@@ -36,7 +36,7 @@ def tags_path(repo_root: Path, tmp_output_dir: Path) -> Path:
     import subprocess
     result = subprocess.run(
         [
-            "python", "-m", "training_data_synonym.cli", "enrich",
+            "python", "-m", "training_data.cli", "enrich",
             "--tables-config", str(repo_root / "configs" / "tables.yaml"),
             "--source", "mock",
             "--fixture-dir", str(repo_root / "tests/fixtures/hive"),

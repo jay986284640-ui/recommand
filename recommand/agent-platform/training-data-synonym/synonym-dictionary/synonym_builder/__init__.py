@@ -10,7 +10,6 @@ Usage::
     from synonym_builder import build_synonyms
 
     build_synonyms(
-        profile_path="output/stage1/item_profile.jsonl",
         dim_dict_path="output/stage1/dim_dictionary_snapshot.yaml",
         output_dir="output/synonyms",
         llm_client=llm,

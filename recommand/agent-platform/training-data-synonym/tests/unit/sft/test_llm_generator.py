@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from training_data_synonym.common.llm_client import MockLLMClient
-from training_data_synonym.sft.llm_generator import (
+from training_data.common.llm_client import MockLLMClient
+from training_data.sft.llm_generator import (
     LLMGenerator,
     build_sft_prompt,
     parse_sft_response,

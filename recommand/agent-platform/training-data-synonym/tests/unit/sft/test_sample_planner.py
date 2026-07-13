@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import random
 
-from training_data_synonym.data_model import DIM_ORDER, ItemTags, Role, TagOrigin, TagSource
-from training_data_synonym.sft.sample_planner import SamplePlanner, get_non_null_dims
+from training_data.data_model import DIM_ORDER, ItemTags, Role, TagOrigin, TagSource
+from training_data.sft.sample_planner import SamplePlanner, get_non_null_dims
 
 
 def _make_item(tags: dict) -> ItemTags:

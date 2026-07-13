@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from training_data_synonym.common.tables_config import load_tables_config
-from training_data_synonym.data_model import HiveReadSpec
-from training_data_synonym.hive_reader.mock_reader import MockHiveReader
+from training_data.common.tables_config import load_tables_config
+from training_data.data_model import HiveReadSpec
+from training_data.hive_reader.mock_reader import MockHiveReader
 
 
 def test_default_etl_dt_partition(fixtures_dir, repo_root):

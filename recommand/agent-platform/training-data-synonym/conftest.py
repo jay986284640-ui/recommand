@@ -1,4 +1,4 @@
-"""Shared pytest fixtures for training-data-synonym."""
+"""Shared pytest fixtures for training-data."""
 
 from __future__ import annotations
 
@@ -12,10 +12,10 @@ _synonym_dir = Path(__file__).resolve().parent / "synonym-dictionary"
 if str(_synonym_dir) not in sys.path:
     sys.path.insert(0, str(_synonym_dir))
 
-from training_data_synonym.common.config import Config
-from training_data_synonym.common.llm_client import LLMClient, MockLLMClient
-from training_data_synonym.common.logging import configure_logging
-from training_data_synonym.hive_reader.mock_reader import MockHiveReader
+from training_data.common.config import Config
+from training_data.common.llm_client import LLMClient, MockLLMClient
+from training_data.common.logging import configure_logging
+from training_data.hive_reader.mock_reader import MockHiveReader
 
 
 @pytest.fixture

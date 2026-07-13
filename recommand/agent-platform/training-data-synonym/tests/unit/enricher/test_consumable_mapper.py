@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import logging
 
-from training_data_synonym.data_model import TagOrigin
-from training_data_synonym.enricher.consumable_mapper import ConsumableMapper
+from training_data.data_model import TagOrigin
+from training_data.enricher.consumable_mapper import ConsumableMapper
 
 
 def _mapping():
@@ -86,7 +86,7 @@ def test_consumable_type_rejected_logged(caplog):
     """Part B: LLM-returned consumable_type not in VALID_VALUES → silent reject + log + counter."""
     import logging
 
-    from training_data_synonym.common.llm_client import MockLLMClient
+    from training_data.common.llm_client import MockLLMClient
 
     class BadCTLLM(MockLLMClient):
         def complete(self, prompt, *, temperature=0.7, item_id=""):
@@ -94,7 +94,7 @@ def test_consumable_type_rejected_logged(caplog):
 
     m = ConsumableMapper(_mapping(), llm_client=BadCTLLM(seed=1))
     caplog.set_level(
-        logging.WARNING, logger="training_data_synonym.enricher.consumable_mapper"
+        logging.WARNING, logger="training_data.enricher.consumable_mapper"
     )
 
     # Force the LLM path: category not in map (e.g. 日料), no text hints, but text present.
@@ -113,7 +113,7 @@ def test_consumable_type_rejected_logged(caplog):
 
 def test_consumable_type_valid_no_rejection():
     """In-vocab consumable_type → no rejection logged."""
-    from training_data_synonym.common.llm_client import MockLLMClient
+    from training_data.common.llm_client import MockLLMClient
 
     class GoodCTLLM(MockLLMClient):
         def complete(self, prompt, *, temperature=0.7, item_id=""):
@@ -134,7 +134,7 @@ def test_name_inferred_category_when_cat_nm_empty(caplog):
     """v2.5: empty Cat_Nm + product name contains category → inferred category → mapping."""
     m = ConsumableMapper(_mapping(), llm_client=None,
                           category_values=["咖啡", "奶茶", "快餐", "中餐", "西餐"])
-    caplog.set_level(logging.INFO, logger="training_data_synonym.enricher.consumable_mapper")
+    caplog.set_level(logging.INFO, logger="training_data.enricher.consumable_mapper")
     raw = {"str_nm": "星巴克 咖啡 馆"}  # no Cat_Nm, but name has "咖啡"
     v, s = m.map(category=None, item_id="inf-test", raw_record=raw)
     # 咖啡 is in mapping → drink

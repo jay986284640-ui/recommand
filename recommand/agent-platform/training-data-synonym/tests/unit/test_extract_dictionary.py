@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from training_data_synonym.cli.extract_dictionary import (
+from training_data.cli.extract_dictionary import (
     RawRow,
     aggregate_raw,
     clean_brand,
@@ -270,9 +270,9 @@ def test_diff_categories_basic():
 
 
 def test_query_brands_from_hive_reads_fixtures(fixtures_dir: Path):
-    from training_data_synonym.data_model import HiveReadSpec, Role
-    from training_data_synonym.hive_reader.mock_reader import MockHiveReader
-    from training_data_synonym.sql_parser.parser import parse_sql
+    from training_data.data_model import HiveReadSpec, Role
+    from training_data.hive_reader.mock_reader import MockHiveReader
+    from training_data.sql_parser.parser import parse_sql
 
     reader = MockHiveReader(fixture_dir=fixtures_dir / "hive")
     tables = parse_sql("/opt/recommand/recommand/tabale_structer.sql")
@@ -285,9 +285,9 @@ def test_query_brands_from_hive_reads_fixtures(fixtures_dir: Path):
 
 
 def test_query_categories_from_hive_reads_fixtures(fixtures_dir: Path):
-    from training_data_synonym.data_model import HiveReadSpec
-    from training_data_synonym.hive_reader.mock_reader import MockHiveReader
-    from training_data_synonym.sql_parser.parser import parse_sql
+    from training_data.data_model import HiveReadSpec
+    from training_data.hive_reader.mock_reader import MockHiveReader
+    from training_data.sql_parser.parser import parse_sql
 
     reader = MockHiveReader(fixture_dir=fixtures_dir / "hive")
     tables = parse_sql("/opt/recommand/recommand/tabale_structer.sql")
@@ -356,11 +356,11 @@ def test_extract_frequency_min_filters(repo_root: Path, fixtures_dir: Path, tmp_
 
 
 def test_cli_extract_dictionary_subcommand(repo_root: Path, fixtures_dir: Path, tmp_path: Path):
-    """End-to-end via subprocess: python -m training_data_synonym.cli extract-dictionary"""
+    """End-to-end via subprocess: python -m training_data.cli extract-dictionary"""
     out_dir = tmp_path / "cli_dict_candidates"
     result = subprocess.run(
         [
-            "python", "-m", "training_data_synonym.cli", "extract-dictionary",
+            "python", "-m", "training_data.cli", "extract-dictionary",
             "--sql", str(repo_root.parent.parent / "tabale_structer.sql"),
             "--source", "mock",
             "--fixture-dir", str(fixtures_dir / "hive"),

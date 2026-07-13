@@ -2,7 +2,7 @@
 
 .. deprecated::
     This module is deprecated as of v2.5. Use
-    :func:`training_data_synonym.common.tables_config.load_tables_config`
+    :func:`training_data.common.tables_config.load_tables_config`
     with ``configs/tables.yaml`` instead. SQL DDL parsing is brittle and
     cannot capture intent (sensitive columns, role hints) that the new YAML
     schema expresses explicitly. New code MUST NOT import ``parse_sql``.
@@ -28,8 +28,8 @@ from pathlib import Path
 from ..data_model import ColumnMeta, Role, TableMeta
 
 warnings.warn(
-    "training_data_synonym.sql_parser is deprecated; "
-    "use training_data_synonym.common.tables_config.load_tables_config "
+    "training_data.sql_parser is deprecated; "
+    "use training_data.common.tables_config.load_tables_config "
     "with configs/tables.yaml.",
     DeprecationWarning,
     stacklevel=2,

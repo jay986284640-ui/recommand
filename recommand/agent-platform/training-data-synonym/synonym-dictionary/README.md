@@ -138,6 +138,6 @@ Costa, costa coffee, COSTA, 哥斯达, 科斯塔
 
 ## 相关
 
-- 训练数据生成:`../training-data-synonym/`
+- 训练数据生成:`../training-data/`
 - 离线数据管线:`../data-pipeline/`
 - 003 spec(参考):`../data-pipeline/specs/003-synonym-dictionary/`

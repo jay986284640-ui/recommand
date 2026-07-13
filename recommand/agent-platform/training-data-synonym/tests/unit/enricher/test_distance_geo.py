@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from training_data_synonym.data_model import Role, TagOrigin
-from training_data_synonym.enricher.distance_geo import extract_distance_tag
+from training_data.data_model import Role, TagOrigin
+from training_data.enricher.distance_geo import extract_distance_tag
 
 
 def test_geo_source_when_lng_lat_present():

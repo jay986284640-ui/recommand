@@ -118,7 +118,7 @@ dims:
             └─────────────────┼─────────────────┘
                               ↓
               ┌───────────────────────────────────┐
-              │ training_data_synonym/           │
+              │ training_data/           │
               │   common/tables_config.py        │
               │   load_tables_config(yaml)       │
               │   → list[TableMeta]              │
@@ -176,8 +176,8 @@ dims:
 |------|------|
 | `docs/ALIGNMENT_cib_o2o.md` | 本文档 |
 | `configs/tables.yaml` | **v2.5 新** — 表结构声明(取代 sql_parser) |
-| `training_data_synonym/common/tables_config.py` | **v2.5 新** — YAML 加载器 |
-| `training_data_synonym/common/llm_client.py` | MockLLMClient + OpenAICompatClient (v2.5) |
+| `training_data/common/tables_config.py` | **v2.5 新** — YAML 加载器 |
+| `training_data/common/llm_client.py` | MockLLMClient + OpenAICompatClient (v2.5) |
 | `scripts/sql_parser.py` | 旧版 regex 解析,保留兼容不再被 demo 调用 |
 | `scripts/mock_llm_client.py` | 旧版 heuristic mock,保留参考 |
 | `configs/dim_dictionary.yaml` | 8 维商业属性字典(merchant 82 / occasion 13 / taste 14) |

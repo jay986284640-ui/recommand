@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from training_data_synonym.enricher.state import (
+from training_data.enricher.state import (
     EnrichmentStateRow,
     EnrichmentStateStore,
     compute_raw_md5,

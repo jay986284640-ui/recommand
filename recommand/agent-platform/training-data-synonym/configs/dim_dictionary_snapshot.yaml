@@ -1,6 +1,6 @@
 _meta:
   version: 2.5-stage1-snapshot
-  source: /opt/recommand/recommand/agent-platform/training-data-synonym/test_output/item_tags.jsonl
+  source: /opt/recommand/recommand/agent-platform/training-data/test_output/item_tags.jsonl
   items: 300
   merged_with: configs/dim_dictionary.yaml
 category:

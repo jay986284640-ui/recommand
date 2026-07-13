@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 from collections import Counter
 
-from training_data_synonym.sft.negative_sampler import NEGATIVE_TYPES, NegativeSampler
+from training_data.sft.negative_sampler import NEGATIVE_TYPES, NegativeSampler
 
 
 def test_is_negative_zero_ratio():

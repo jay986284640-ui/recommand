@@ -60,7 +60,7 @@ class SparkHiveReader(HiveReader):
                 ) from e
             try:
                 builder = (
-                    SparkSession.builder.appName("training-data-synonym")
+                    SparkSession.builder.appName("training-data")
                     .enableHiveSupport()
                 )
                 if self._metastore_uri:

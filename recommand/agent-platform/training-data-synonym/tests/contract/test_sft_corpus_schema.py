@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from training_data_synonym.common.versioning import SFT_CORPUS_V
-from training_data_synonym.data_model import DIM_ORDER
+from training_data.common.versioning import SFT_CORPUS_V
+from training_data.data_model import DIM_ORDER
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def sft_path(repo_root: Path, tmp_output_dir: Path) -> Path:
     # Run Stage 1 first
     r1 = subprocess.run(
         [
-            "python", "-m", "training_data_synonym.cli", "enrich",
+            "python", "-m", "training_data.cli", "enrich",
             "--tables-config", str(repo_root / "configs" / "tables.yaml"),
             "--source", "mock",
             "--fixture-dir", str(repo_root / "tests/fixtures/hive"),
@@ -29,7 +29,7 @@ def sft_path(repo_root: Path, tmp_output_dir: Path) -> Path:
     # Run Stage 2
     r2 = subprocess.run(
         [
-            "python", "-m", "training_data_synonym.cli", "sft",
+            "python", "-m", "training_data.cli", "sft",
             "--input", str(tmp_output_dir / "item_tags.jsonl"),
             "--output-dir", str(tmp_output_dir),
             "--count-per-item", "4",

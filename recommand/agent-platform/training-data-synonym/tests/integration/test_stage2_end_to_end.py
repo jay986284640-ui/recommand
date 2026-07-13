@@ -9,9 +9,9 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from training_data_synonym.common.config import Config
-from training_data_synonym.common.llm_client import MockLLMClient
-from training_data_synonym.sft.pipeline import SFTPipeline
+from training_data.common.config import Config
+from training_data.common.llm_client import MockLLMClient
+from training_data.sft.pipeline import SFTPipeline
 
 
 def test_stage2_end_to_end(fixtures_dir: Path, repo_root: Path, tmp_output_dir: Path):
@@ -20,7 +20,7 @@ def test_stage2_end_to_end(fixtures_dir: Path, repo_root: Path, tmp_output_dir: 
     # the artifact (item_tags.jsonl) must exist regardless.
     subprocess.run(
         [
-            "python", "-m", "training_data_synonym.cli", "enrich",
+            "python", "-m", "training_data.cli", "enrich",
             "--sql", str(repo_root.parent.parent / "tabale_structer.sql"),
             "--source", "mock",
             "--fixture-dir", str(repo_root / "tests/fixtures/hive"),
@@ -56,7 +56,7 @@ def test_stage2_end_to_end(fixtures_dir: Path, repo_root: Path, tmp_output_dir: 
 
 def test_negative_type_distribution():
     """3 negative types each ≥ 20% of negatives (SC-006 strict)."""
-    from training_data_synonym.sft.negative_sampler import NegativeSampler
+    from training_data.sft.negative_sampler import NegativeSampler
     import random
     rng = random.Random(0)
     s = NegativeSampler(rng, negative_ratio=1.0)

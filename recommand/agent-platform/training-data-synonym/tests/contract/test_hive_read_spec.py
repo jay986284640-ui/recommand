@@ -15,10 +15,10 @@ from pathlib import Path
 
 import pytest
 
-from training_data_synonym.common.exceptions import SensitiveLeakError
-from training_data_synonym.common.tables_config import load_tables_config
-from training_data_synonym.data_model import HiveReadSpec, Role
-from training_data_synonym.hive_reader.mock_reader import MockHiveReader
+from training_data.common.exceptions import SensitiveLeakError
+from training_data.common.tables_config import load_tables_config
+from training_data.data_model import HiveReadSpec, Role
+from training_data.hive_reader.mock_reader import MockHiveReader
 
 SENSITIVE = ["MASTERCARD_CUST_ID", "Crt_Psn_Id", "Updt_Psn_Id", "Opr_Psn_Id", "creator", "updatePerson"]
 
@@ -86,7 +86,7 @@ def test_sensitive_drop_raises_when_undropped():
     production behavior is asserted via test_sensitive_columns_dropped
     for the happy path.
     """
-    from training_data_synonym.common.exceptions import SensitiveLeakError
+    from training_data.common.exceptions import SensitiveLeakError
     sensitive = ["Crt_Psn_Id", "Opr_Psn_Id"]
     fake_raw = {"Crt_Psn_Id": "leaked", "Str_Id": "999"}
     with pytest.raises(SensitiveLeakError):

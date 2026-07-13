@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 
-from training_data_synonym.sft.diversity import DEFAULT_TEMPLATES, DiversitySampler
+from training_data.sft.diversity import DEFAULT_TEMPLATES, DiversitySampler
 
 
 def test_pick_template_returns_valid():

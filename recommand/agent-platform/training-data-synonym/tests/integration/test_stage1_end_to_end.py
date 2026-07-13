@@ -9,10 +9,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from training_data_synonym.common.config import Config
-from training_data_synonym.common.llm_client import MockLLMClient
-from training_data_synonym.enricher.pipeline import EnrichmentPipeline
-from training_data_synonym.hive_reader.mock_reader import MockHiveReader
+from training_data.common.config import Config
+from training_data.common.llm_client import MockLLMClient
+from training_data.enricher.pipeline import EnrichmentPipeline
+from training_data.hive_reader.mock_reader import MockHiveReader
 
 
 def test_stage1_end_to_end(fixtures_dir: Path, repo_root: Path, tmp_output_dir: Path):

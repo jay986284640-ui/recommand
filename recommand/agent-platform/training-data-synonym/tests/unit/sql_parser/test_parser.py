@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from training_data_synonym.data_model import Role
-from training_data_synonym.sql_parser.parser import parse_sql, role_from_tablename
+from training_data.data_model import Role
+from training_data.sql_parser.parser import parse_sql, role_from_tablename
 
 
 def test_role_inference_rules():

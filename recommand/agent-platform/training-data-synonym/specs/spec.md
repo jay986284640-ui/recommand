@@ -1,6 +1,6 @@
 # Feature Specification: 训练数据生成 (兴业 O2O 三品类 SFT 语料)
 
-**Feature Branch**: `training-data-synonym`
+**Feature Branch**: `training-data`
 **Created**: 2026-06-22
 **Status**: v2.5.2 — Config-driven LLM inference + extensible tables
 **Input**: User description: "工程的输入是 `tabale_structer.sql` 中的各种表,推荐商品包含美团门店、自拓展门店、优惠券;工程分为三步:(1) 全量标签抽取,从 Hive 抽取 brand/category/taste/occasion 字典;(2) 实际标注数据,LLM 推断 8 维标签,字典约束;(3) 合成 SFT 数据,标签 → 多轮对话语料。"
@@ -45,7 +45,7 @@
 
 **Related**:
 
-- `agent-platform/training-data-synonym/docs/ALIGNMENT_cib_o2o.md` — 业务对齐说明
+- `agent-platform/training-data/docs/ALIGNMENT_cib_o2o.md` — 业务对齐说明
 
 ---
 
@@ -155,7 +155,7 @@ Stage 1: extract-tags          Stage 2: enrich                Stage 3: sft
 
 **Why this priority**:字典扩量是 off-cycle ops 任务,不影响 Stage 1/2 主流水线;但字典质量直接决定 LP Agent 召回 P/R。每季度跑一次即可,**不阻塞生产 SFT 出货**。
 
-**Independent Test**: `python -m training_data_synonym.cli extract-dictionary --source mock --frequency-min 1` 产出 `dict_candidates/{brands_raw,brands_normalized,categories_*}.csv` + `brands_diff.yaml` / `categories_diff.yaml`,含 `_meta` 字段(raw_count / normalized_count / added_count / removed_count / frequency_min / levenshtein_threshold / jaccard_threshold);`brands_diff.yaml` 含 `added / existing / removed` 三段,排序按 `frequency` 降序;`extract` 函数可独立调用并返回统计 dict。CI 完全脱机可跑(mock fixture),无需 Hive 集群。
+**Independent Test**: `python -m training_data.cli extract-dictionary --source mock --frequency-min 1` 产出 `dict_candidates/{brands_raw,brands_normalized,categories_*}.csv` + `brands_diff.yaml` / `categories_diff.yaml`,含 `_meta` 字段(raw_count / normalized_count / added_count / removed_count / frequency_min / levenshtein_threshold / jaccard_threshold);`brands_diff.yaml` 含 `added / existing / removed` 三段,排序按 `frequency` 降序;`extract` 函数可独立调用并返回统计 dict。CI 完全脱机可跑(mock fixture),无需 Hive 集群。
 
 **Acceptance Scenarios**:
 
@@ -455,7 +455,7 @@ extract_dictionary:
 ```
 
 ```yaml
-training_data_synonym:
+training_data:
   input:
     sql_path: /opt/recommand/recommand/tabale_structer.sql
     source: hive                         # hive | mock(CI / dev 用)

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from training_data_synonym.data_model import DIM_ORDER, MessageTurn, Role, SFTSample
-from training_data_synonym.sft.validator import validate_sft_sample
+from training_data.data_model import DIM_ORDER, MessageTurn, Role, SFTSample
+from training_data.sft.validator import validate_sft_sample
 
 
 DICT = {

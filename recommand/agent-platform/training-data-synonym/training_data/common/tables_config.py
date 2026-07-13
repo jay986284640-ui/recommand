@@ -2,7 +2,7 @@
 
 Per spec v2.5: ``configs/tables.yaml`` declares db / name / role / item_id /
 columns (name + type) / sensitive flags.  :func:`load_tables_config` validates
-the YAML and returns a list of :class:`~training_data_synonym.data_model.TableMeta`.
+the YAML and returns a list of :class:`~training_data.data_model.TableMeta`.
 """
 
 from __future__ import annotations

@@ -34,40 +34,6 @@ import yaml
 # ---------------------------------------------------------------------------
 
 
-def _load_item_profile(profile_path: Path) -> list[dict]:
-    """Read item_profile.jsonl and return list of item dicts."""
-    items: list[dict] = []
-    with profile_path.open(encoding="utf-8") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            items.append(json.loads(line))
-    return items
-
-
-def _collect_tags(items: list[dict], dims: list[str]) -> dict[str, set[str]]:
-    """Collect unique values for *dims* from item profiles.
-
-    Scalar dims (brand, category) → single string value.
-    List dims (taste, occasion) → each element counted separately.
-    """
-    collected: dict[str, set[str]] = {d: set() for d in dims}
-
-    for item in items:
-        for dim in dims:
-            v = item.get(dim)
-            if v is None:
-                continue
-            if isinstance(v, list):
-                for t in v:
-                    if t and str(t).strip():
-                        collected[dim].add(str(t).strip())
-            elif isinstance(v, str) and v.strip():
-                collected[dim].add(v.strip())
-
-    return collected
-
-
 def _load_dim_dict(path: Path) -> dict[str, Any]:
     """Load dim_dictionary_snapshot.yaml; return {} if absent."""
     if not path.exists():
@@ -224,7 +190,6 @@ def _write_meta(out_dir: Path, *, total_groups: int, total_written: int,
 
 def build_synonyms(
     *,
-    profile_path: str | Path,
     dim_dict_path: str | Path,
     output_dir: str | Path,
     llm_client: Any,
@@ -232,46 +197,33 @@ def build_synonyms(
 ) -> dict[str, int]:
     """Generate ``synonyms_solr.txt`` via LLM-driven synonym expansion.
 
-    Each unique value from every dimension plus store names is sent
-    individually to the LLM.  The prompt handles type-specific logic
-    (brand → abbreviations, store names → decomposition, etc.).
+    Reads terms exclusively from ``dim_dictionary_snapshot.yaml``.
+    Each unique value from every dimension is sent individually to the LLM.
 
     Returns stats dict.
     """
     import logging as _logging
     logger = _logging.getLogger(__name__)
 
-    profile = Path(profile_path)
     dim_dict = Path(dim_dict_path)
     out_dir = Path(output_dir)
     prompt_path = Path(prompt_template_path)
 
-    if not profile.exists():
-        raise FileNotFoundError(f"item_profile.jsonl not found: {profile}")
+    if not dim_dict.exists():
+        raise FileNotFoundError(f"dim_dictionary_snapshot.yaml not found: {dim_dict}")
     if not prompt_path.exists():
         raise FileNotFoundError(f"prompt template not found: {prompt_path}")
 
-    # ---- load ----
-    items = _load_item_profile(profile)
+    # ---- load terms from dict snapshot only ----
     dim_data = _load_dim_dict(dim_dict)
+    dims = sorted(k for k in dim_data if not k.startswith("_"))
 
-    # Discover dimensions dynamically from snapshot (exclude _meta)
-    dims = sorted(k for k in dim_data if not k.startswith("_")) if dim_data else []
-    if not dims:
-        # Fallback: discover from first item's keys
-        if items:
-            known = {"brand", "category", "taste", "occasion", "cuisine", "consumable_type"}
-            dims = sorted(k for k in items[0] if k in known)
-
-    tags = _collect_tags(items, dims)
-    template = prompt_path.read_text(encoding="utf-8")
-
-    # Supplement from dim dictionary
+    tags: dict[str, set[str]] = {}
     for dim_name in dims:
         dim_vals = (dim_data.get(dim_name) or {}).get("values", []) or []
-        for v in dim_vals:
-            if v and str(v).strip():
-                tags[dim_name].add(str(v).strip())
+        tags[dim_name] = {str(v).strip() for v in dim_vals if v and str(v).strip()}
+
+    template = prompt_path.read_text(encoding="utf-8")
 
     # ---- summary ----
     total_terms = sum(len(tags[d]) for d in dims)

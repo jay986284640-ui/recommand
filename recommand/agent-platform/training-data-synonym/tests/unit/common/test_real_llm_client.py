@@ -13,9 +13,9 @@ import pytest
 
 httpx = pytest.importorskip("httpx")  # skip entire module when [llm] extra absent
 
-from training_data_synonym.common import llm_client as llm_module
-from training_data_synonym.common.exceptions import ValidationError
-from training_data_synonym.common.llm_client import (
+from training_data.common import llm_client as llm_module
+from training_data.common.exceptions import ValidationError
+from training_data.common.llm_client import (
     LLMTimeoutError,
     MockLLMClient,
     OpenAICompatClient,
@@ -192,7 +192,7 @@ class TestOpenAICompatClient:
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(200, json=_ok_payload('{"a": 1}', 12, 7))
 
-        caplog.set_level(logging.INFO, logger="training_data_synonym.common.llm_client")
+        caplog.set_level(logging.INFO, logger="training_data.common.llm_client")
         c = OpenAICompatClient(model="claude-haiku-4-5", api_key="sk-test")
         c._client = _make_transport(handler)
         c.complete("hi", item_id="mt-42")
@@ -214,7 +214,7 @@ class TestOpenAICompatClient:
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(500, text="boom")
 
-        caplog.set_level(logging.WARNING, logger="training_data_synonym.common.llm_client")
+        caplog.set_level(logging.WARNING, logger="training_data.common.llm_client")
         c = OpenAICompatClient(model="claude-haiku-4-5", api_key="sk-test")
         c._client = _make_transport(handler)
         with pytest.raises(LLMTimeoutError):

@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import logging
 
-from training_data_synonym.common.llm_client import MockLLMClient
-from training_data_synonym.enricher.llm_enricher import (
+from training_data.common.llm_client import MockLLMClient
+from training_data.enricher.llm_enricher import (
     LLMEnricher,
     build_enrichment_prompt,
     parse_enrichment_response,
@@ -81,7 +81,7 @@ def test_enrich_filters_dict_violations():
 
 def test_enrich_all_null_on_llm_failure():
     """When LLM fails to respond, all 6 dims are None."""
-    from training_data_synonym.common.llm_client import LLMTimeoutError
+    from training_data.common.llm_client import LLMTimeoutError
 
     class FailClient(MockLLMClient):
         def complete(self, prompt, *, temperature=0.7, item_id=""):
@@ -109,7 +109,7 @@ def test_enrich_logs_dict_rejection(caplog):
             }
 
     enricher = _make_enricher(BadLLM(seed=1), DICT, PROMPT_TPL)
-    caplog.set_level(logging.WARNING, logger="training_data_synonym.enricher.llm_enricher")
+    caplog.set_level(logging.WARNING, logger="training_data.enricher.llm_enricher")
 
     out = enricher.enrich({"cat_nm": "咖啡"}, item_id="test-item")
 
@@ -170,7 +170,7 @@ def test_enrich_uses_name_hint_when_llm_returns_none(caplog):
             }
 
     enricher = _make_enricher(NullMerchantLLM(seed=1), DICT, PROMPT_TPL)
-    caplog.set_level(logging.INFO, logger="training_data_synonym.enricher.llm_enricher")
+    caplog.set_level(logging.INFO, logger="training_data.enricher.llm_enricher")
 
     # raw record has empty brnd_nm, str_nm has brand keyword
     out = enricher.enrich(

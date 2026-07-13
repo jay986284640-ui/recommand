@@ -1,8 +1,8 @@
 # Implementation Plan: 训练数据生成 (兴业 O2O 三品类 SFT 语料)
 
-**Branch**: `training-data-synonym` | **Date**: 2026-06-26 | **Spec**: [./spec.md](./spec.md) (v2.5.1)
+**Branch**: `training-data` | **Date**: 2026-06-26 | **Spec**: [./spec.md](./spec.md) (v2.5.1)
 
-**Input**: Feature specification from `agent-platform/training-data-synonym/specs/spec.md`
+**Input**: Feature specification from `agent-platform/training-data/specs/spec.md`
 
 **Status**: Phase 1 设计完成 + Stage 0/1/2/3 + split/verify + 真实 LLM + name_inference 已交付。
    3-Stage Pipeline: `extract-tags` → `enrich` → `sft`。
@@ -80,7 +80,7 @@
 
 **Project Type**:
 
-- **Library + CLI**(对齐 Constitution Principles I / II)。本工程是 `agent-platform/training-data-synonym/` 子目录内的独立 Python 包,**不**改 `agent-platform/data-pipeline/`,**不**改 LP Agent envelope。
+- **Library + CLI**(对齐 Constitution Principles I / II)。本工程是 `agent-platform/training-data/` 子目录内的独立 Python 包,**不**改 `agent-platform/data-pipeline/`,**不**改 LP Agent envelope。
 
 **Performance Goals**:
 
@@ -112,13 +112,13 @@
 
 ### I. Library-First ✅
 
-- `agent-platform/training-data-synonym/` 是独立 Python 包,**不**反向依赖 `data-pipeline/`。
+- `agent-platform/training-data/` 是独立 Python 包,**不**反向依赖 `data-pipeline/`。
 - 子模块边界:`sql_parser` / `hive_reader` / `enricher` / `distance_geo` / `consumable_mapper` / `sft_generator` / `distance_sampler` / `cleaner` / `distribution_analyzer` / `splitter` / `writer`,每个均有明确单一职责。
 - 与上游(Hive / 字典 yaml / LLM)接耦合点:抽象接口 + mock 实现,可独立测试。
 
 ### II. CLI Interface ✅
 
-- 顶层入口 `python -m training_data_synonym.cli`(等价 `scripts/generate_training_data.py`):
+- 顶层入口 `python -m training_data.cli`(等价 `scripts/generate_training_data.py`):
   - `--source hive|mock --sql <path> --stage enrich|sft|all --mode full|incremental --etl-dt <YYYYMMDD>|latest_n=N --n-items-per-type <N> --output-dir <dir>`
 - 文本 I/O:stdin/args → stdout(jsonl / json);错误 → stderr;支持 `--format human|json` 双格式输出 summary。
 - 子命令辅助:`tables-meta`(只跑 SQL 解析)、`enrich`(只跑 Stage 1)、`sft`(只跑 Stage 2)、`split`(只跑划分)、`verify`(对照 SC 自检)。
@@ -159,7 +159,7 @@
 ### Documentation (this feature)
 
 ```text
-agent-platform/training-data-synonym/specs/
+agent-platform/training-data/specs/
 ├── spec.md                            # 已有(v2.4)
 ├── plan.md                            # 本文件(/speckit-plan 输出)
 ├── research.md                        # Phase 0 输出
@@ -175,10 +175,10 @@ agent-platform/training-data-synonym/specs/
 └── tasks.md                           # Phase 2 输出(/speckit-tasks 生成)
 ```
 
-### Source Code (project root: `agent-platform/training-data-synonym/`)
+### Source Code (project root: `agent-platform/training-data/`)
 
 ```text
-agent-platform/training-data-synonym/
+agent-platform/training-data/
 ├── README.md                          # 已有
 ├── docs/
 │   └── ALIGNMENT_cib_o2o.md           # 已有
@@ -191,11 +191,11 @@ agent-platform/training-data-synonym/
 │   │   ├── enrichment_v1.txt          # Stage 1 LLM prompt(6 维兜底 + consumable_type 兜底)
 │   │   └── sft_v1.txt                 # Stage 2 LLM prompt(8 维 + 5 轮对话 + 负样本注入)
 │   └── pipeline.yaml                  # 顶层运行配置(对齐 spec.md Configuration Snapshot)
-├── training_data_synonym/             # Python 包(库源码)
+├── training_data/             # Python 包(库源码)
 │   ├── __init__.py
 │   ├── cli/                           # CLI 子包(Constitution Principle II)
 │   │   ├── __init__.py                # 主入口 + tables-meta / enrich / sft / split / verify / all / extract-dictionary
-│   │   ├── __main__.py                # `python -m training_data_synonym.cli` 入口
+│   │   ├── __main__.py                # `python -m training_data.cli` 入口
 │   │   └── extract_dictionary.py      # US4 Stage 0 离线工具(SQL 抽取 + 规范化 + 频次 + diff)
 │   ├── sql_parser/
 │   │   ├── __init__.py
@@ -240,8 +240,8 @@ agent-platform/training-data-synonym/
 │       ├── llm_client.py              # 复用 data-pipeline 的 LLMClient 抽象
 │       ├── mock_llm_client.py         # 本地启发式 mock
 │       └── logging.py                 # 结构化日志(json line)
-├── scripts/                           # 已有(legacy demo 脚本,本批迁移到 training_data_synonym 包后保留为薄壳)
-│   ├── generate_training_data.py      # 调用 training_data_synonym.cli
+├── scripts/                           # 已有(legacy demo 脚本,本批迁移到 training_data 包后保留为薄壳)
+│   ├── generate_training_data.py      # 调用 training_data.cli
 │   ├── sql_parser.py                  # 已有 — 保留兼容(实际逻辑迁入包)
 │   ├── mock_llm_client.py             # 已有 — 同上
 │   ├── cleaner.py                     # 已有
@@ -297,8 +297,8 @@ agent-platform/training-data-synonym/
 **Structure Decision**:
 
 - **库 + CLI + 配置 + 测试**(Constitution Principle I/II 双满足)。
-- 路径根:`agent-platform/training-data-synonym/`(已存在,本批扩展)。
-- 既有 `scripts/*.py` 保留为兼容薄壳;实际逻辑迁入 `training_data_synonym/` 包,以满足 Library-First(Principle I)。
+- 路径根:`agent-platform/training-data/`(已存在,本批扩展)。
+- 既有 `scripts/*.py` 保留为兼容薄壳;实际逻辑迁入 `training_data/` 包,以满足 Library-First(Principle I)。
 - `data-pipeline/`、`synonym-dictionary/`、`local-promo-agent/`、`main-agent/` **全部不动**。
 
 ---
@@ -359,7 +359,7 @@ agent-platform/training-data-synonym/
 
 | Principle | 状态 | 理由 |
 |-----------|------|------|
-| I. Library-First | ✅ | `training_data_synonym/` 是独立包,所有依赖单向,子模块边界清晰 |
+| I. Library-First | ✅ | `training_data/` 是独立包,所有依赖单向,子模块边界清晰 |
 | II. CLI Interface | ✅ | 顶层 `cli/__init__.py` + 7 个子命令(`tables-meta / enrich / sft / split / verify / all / extract-dictionary`)+ `--format human|json` |
 | III. Test-First | ✅ | 4 类测试目录(unit / contract / integration / fixtures);tasks.md 必须先红后绿 |
 | IV. Integration Testing | ✅ | 4 张契约 + 3 个 integration scenarios 全覆盖 |

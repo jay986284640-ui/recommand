@@ -1,7 +1,7 @@
 # 顶层运行配置(spec Configuration Snapshot v2.4)
 # 字典 / 映射文件由独立 yaml 加载(common/config.py 合并)
 
-training_data_synonym:
+training_data:
   input:
     source: hive                      # hive | mock
     hive:
@@ -66,7 +66,7 @@ training_data_synonym:
     llm:
       model: deepseek-chat
       provider: openai_compat
-      api_key: 
+      api_key: sk-ef5f2293bc234e5c8bf21346a1e9065c
       base_url: https://api.deepseek.com/v1
       timeout_seconds: 30
       max_tokens: 2048

@@ -48,7 +48,7 @@ def split_statements(sql_text: str) -> list[str]:
 def main() -> None:
     spark = (
         SparkSession.builder
-        .appName("training-data-synonym-ddl")
+        .appName("training-data-ddl")
         .config("hive.metastore.uris", METASTORE_URI)
         .config("spark.sql.warehouse.dir", "/opt/bigdata/hive/warehouse")
         .config("spark.hadoop.javax.jdo.option.ConnectionURL",

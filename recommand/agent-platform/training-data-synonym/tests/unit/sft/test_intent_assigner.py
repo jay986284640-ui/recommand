@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import random
 
-from training_data_synonym.data_model import Role
-from training_data_synonym.sft.intent_assigner import INTENTS, IntentAssigner
+from training_data.data_model import Role
+from training_data.sft.intent_assigner import INTENTS, IntentAssigner
 
 
 def test_assign_returns_count_per_item_intents():

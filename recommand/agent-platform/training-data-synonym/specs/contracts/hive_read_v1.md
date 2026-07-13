@@ -117,7 +117,7 @@ class SparkHiveReader(HiveReader):
 
     def __init__(self, catalog: str = "spark_catalog"):
         self._spark = SparkSession.builder \
-            .appName("training_data_synonym") \
+            .appName("training_data") \
             .enableHiveSupport() \
             .getOrCreate()
         self._catalog = catalog
@@ -308,7 +308,7 @@ def read_all_three_core(
 ## 配置:`pipeline.yaml.input.hive` 段
 
 ```yaml
-training_data_synonym:
+training_data:
   input:
     source: hive                          # hive | mock
     hive:

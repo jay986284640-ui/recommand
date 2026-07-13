@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 
-from training_data_synonym.sft.distance_sampler import DistanceSampler
+from training_data.sft.distance_sampler import DistanceSampler
 
 
 def test_ratio_caps_null_ratio():

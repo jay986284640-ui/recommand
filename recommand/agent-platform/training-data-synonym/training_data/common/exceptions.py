@@ -8,7 +8,7 @@ from __future__ import annotations
 
 
 class PipelineError(Exception):
-    """Base error for the training-data-synonym pipeline."""
+    """Base error for the training-data pipeline."""
 
 
 class StageError(PipelineError):

@@ -223,7 +223,7 @@ class EnrichmentPipeline:
         tables_meta_path = self.output_dir / "tables_meta.json"  # no longer written
 
         # 2. Filter by item_types from pipeline.yaml (default: all configured tables)
-        input_cfg = (self.config.pipeline.get("training_data_synonym") or {}).get("input") or {}
+        input_cfg = (self.config.pipeline.get("training_data") or {}).get("input") or {}
         types_str = input_cfg.get("item_types") or [t.inferred_role.value for t in tables_meta]
         target_roles = {getattr(Role, t.upper(), None) for t in types_str}
         target_roles.discard(None)
@@ -238,11 +238,11 @@ class EnrichmentPipeline:
             sample_n = self._sample_n_per_type
         else:
             yaml_sample = (
-                (self.config.pipeline.get("training_data_synonym") or {}).get("input") or {}
+                (self.config.pipeline.get("training_data") or {}).get("input") or {}
             ).get("hive") or {}
             sample_n = yaml_sample.get("sample_n_per_type") or None
 
-        enrichment_cfg = (self.config.pipeline.get("training_data_synonym") or {}).get(
+        enrichment_cfg = (self.config.pipeline.get("training_data") or {}).get(
             "enrichment"
         ) or {}
         concurrency = int(enrichment_cfg.get("concurrency") or 4)

@@ -20,7 +20,7 @@
 
 **前置条件**:
 - Python 3.11+(`python3 --version`)
-- 安装依赖:`pip install -r agent-platform/training-data-synonym/requirements.txt`(含 pyyaml / jsonschema / tenacity / pytest / hypothesis)
+- 安装依赖:`pip install -r agent-platform/training-data/requirements.txt`(含 pyyaml / jsonschema / tenacity / pytest / hypothesis)
 - 已 clone 工程到本地,`cd` 到 `/opt/recommand/recommand`
 
 **注意**:本工程 CI 完全脱机(`--source=mock` + `MockLLMClient`);无需 Hive 集群 / LLM 凭据即可跑通 demo。
@@ -34,7 +34,7 @@
 **命令**:
 
 ```bash
-python -m training_data_synonym.cli tables-meta \
+python -m training_data.cli tables-meta \
   --tables-config configs/tables.yaml \
   --output /tmp/quickstart/tables_meta.json
 ```
@@ -90,7 +90,7 @@ ls tests/fixtures/hive/ 2>/dev/null || \
 **命令**:
 
 ```bash
-python -m training_data_synonym.cli enrich \
+python -m training_data.cli enrich \
   --tables-config configs/tables.yaml \
   --source mock \
   --fixture-dir tests/fixtures/hive \
@@ -124,7 +124,7 @@ jq '.dict_rejected_count, .items_processed' /tmp/quickstart/enrich/summary.json
 
 # v2.5.1:验证字段契约加载(表结构必需字段缺失 → TablesConfigError)
 python -c "
-from training_data_synonym.common.tables_config import load_tables_config
+from training_data.common.tables_config import load_tables_config
 from pathlib import Path
 tables = load_tables_config(Path('configs/tables.yaml'))
 roles = sorted({t.inferred_role.value for t in tables})
@@ -153,7 +153,7 @@ jq -r '.tag_source.consumable_type' /tmp/quickstart/enrich/item_tags.jsonl | sor
 **命令**:
 
 ```bash
-python -m training_data_synonym.cli sft \
+python -m training_data.cli sft \
   --input /tmp/quickstart/enrich/item_tags.jsonl \
   --output-dir /tmp/quickstart/sft \
   --count-per-item 8 \
@@ -198,7 +198,7 @@ jq -s '[.[] | .llm_model] | unique' /tmp/quickstart/sft/sft_corpus.jsonl
 **命令**:
 
 ```bash
-python -m training_data_synonym.cli split \
+python -m training_data.cli split \
   --input /tmp/quickstart/sft/sft_corpus.jsonl \
   --output-dir /tmp/quickstart/split
 # ratios 从 configs/pipeline.yaml 读(train 0.8 / val 0.1 / test 0.1)
@@ -236,7 +236,7 @@ diff <(jq -r '.item_id' /tmp/quickstart/split/train.jsonl | sort -u) \
 **命令**:
 
 ```bash
-python -m training_data_synonym.cli all \
+python -m training_data.cli all \
   --tables-config configs/tables.yaml \
   --source mock \
   --fixture-dir tests/fixtures/hive \
@@ -269,7 +269,7 @@ cat /tmp/quickstart/e2e/verify_report.json | jq '.sc_pass'
 **命令**:
 
 ```bash
-python -m training_data_synonym.cli extract-dictionary \
+python -m training_data.cli extract-dictionary \
   --tables-config configs/tables.yaml \
   --source mock \
   --fixture-dir tests/fixtures/hive \
@@ -317,7 +317,7 @@ cat /tmp/quickstart/dict_candidates/brands_diff.yaml
 # 2. 编辑 configs/brand_dictionary.yaml,合并 added 段
 # 3. bump _meta.version: 1.0 → 2.0
 # 4. git commit + PR merge → dict_version 自动变 → Stage 1 自动增量重算
-python -m training_data_synonym.cli enrich \
+python -m training_data.cli enrich \
   --tables-config configs/tables.yaml \
   --source mock --fixture-dir tests/fixtures/hive \
   --output-dir /tmp/quickstart/enrich_v2
@@ -346,13 +346,13 @@ bash scripts/demo.sh
 # 生产:Hive + 真实 LLM(OpenAI 兼容 HTTP)
 pip install -e .[llm]   # 装 httpx
 export OPENAI_API_KEY=sk-...
-python -m training_data_synonym.cli all \
+python -m training_data.cli all \
   --tables-config configs/tables.yaml \
   --provider openai_compat --model claude-haiku-4-5 \
   --source hive \
   --catalog spark_catalog \
   --etl-dt-mode latest_n --latest-n 7 \
-  --output-dir /var/lib/training_data_synonym/prod/$(date +%Y%m%d)
+  --output-dir /var/lib/training_data/prod/$(date +%Y%m%d)
 ```
 
 > v2.5 之前用 `--llm-source platform`(legacy 占位)已废弃;改用 `--provider openai_compat`。
@@ -384,7 +384,7 @@ python -m training_data_synonym.cli all \
 运行命令:
 
 ```bash
-pytest agent-platform/training-data-synonym/tests/integration/ -v
+pytest agent-platform/training-data/tests/integration/ -v
 ```
 
 ---
