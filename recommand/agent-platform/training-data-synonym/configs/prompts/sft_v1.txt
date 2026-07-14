@@ -49,6 +49,7 @@ assistant: 推荐Agent回复内容
 - negative_condition: 排除需求（"不要瑞幸"）
 - reference_resolution: 指代理解（"适合约会的吗" 指上文品类）
 - intent_switch: 意图切换（"算了，想吃火锅" 重置条件）
+- vague_query: 无意图模糊查询（"有什么推荐""随便看看""附近有啥好吃的"），assistant主动追问品类/口味/场景等引导用户细化需求，params全部null
 
 多轮规则：
 - 历史有效条件必须被后续继承
@@ -92,7 +93,7 @@ not_contains 示例（排除需求）：
 
 数字字段示例：
 {"price": [{"op": "lt", "values": [30]}]}
-{"distance": [{"op": "between", "values": [500, 1000]}]}
+{"price": [{"op": "between", "values": [50, 100]}]}
 
 约束：
 - values 必须来自当前商品已有属性或用户明确表达

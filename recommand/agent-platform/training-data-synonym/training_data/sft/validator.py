@@ -42,9 +42,8 @@ def validate_sft_sample(
     if not isinstance(sample.params, dict):
         errors.append("params is not a dict")
     else:
-        text_ops = {"contains", "not_contains"}
-        numeric_ops = {"gt", "gte", "lt", "lte", "between", "in", "not_in"}
-        numeric_fields = {"distance", "price"}
+        valid_ops = {"contains", "not_contains", "in", "not_in",
+                     "gt", "gte", "lt", "lte", "between"}
         for field, val in sample.params.items():
             if val is None:
                 continue
@@ -56,9 +55,8 @@ def validate_sft_sample(
                     errors.append(f"params.{field}[{i}] not a dict")
                     continue
                 op = item.get("op", "")
-                allowed = numeric_ops if field in numeric_fields else text_ops
-                if op not in allowed:
-                    errors.append(f"params.{field}[{i}].op '{op}' not in {allowed}")
+                if op not in valid_ops:
+                    errors.append(f"params.{field}[{i}].op '{op}' not in {valid_ops}")
                 vals = item.get("values")
                 if not isinstance(vals, list):
                     errors.append(f"params.{field}[{i}].values not a list")

@@ -14,12 +14,13 @@ from .prompt import build_sft_prompt
 
 logger = get_logger(__name__)
 
-# Fields in the params schema (fixed set per prompt)
-_PARAMS_FIELDS = ["category", "brand", "distance", "price", "taste", "occasion", "consumable_type"]  # already correct
+def parse_sft_response(payload: dict, param_fields: set | None = None) -> dict:
+    """Parse LLM JSON → dict with conversation, intent, params, guide_text etc.
 
-
-def parse_sft_response(payload: dict) -> dict:
-    """Parse LLM JSON → dict with conversation, intent, params, guide_text etc."""
+    Args:
+        payload: Raw LLM JSON response.
+        param_fields: Allowed param field names (from config). None = no filtering.
+    """
     if not isinstance(payload, dict):
         raise ValidationError("LLM response not a dict")
 
@@ -34,11 +35,12 @@ def parse_sft_response(payload: dict) -> dict:
             raise ValidationError(f"bad message entry: {m}")
         messages.append(MessageTurn(role=str(m["role"]), content=str(m["content"])))
 
-    # params — validate and filter to known fields
+    # params — filter to known fields if specified
     params = payload.get("params") or {}
     if not isinstance(params, dict):
         params = {}
-    params = {k: v for k, v in params.items() if k in _PARAMS_FIELDS}
+    if param_fields:
+        params = {k: v for k, v in params.items() if k in param_fields}
 
     return {
         "messages": messages,
@@ -51,9 +53,11 @@ def parse_sft_response(payload: dict) -> dict:
 
 
 class LLMGenerator:
-    def __init__(self, llm_client: LLMClient, prompt_template: str) -> None:
+    def __init__(self, llm_client: LLMClient, prompt_template: str,
+                 param_fields: set | None = None) -> None:
         self._llm = llm_client
         self._template = prompt_template
+        self._param_fields = param_fields
 
     @property
     def model_name(self) -> str:
@@ -66,10 +70,30 @@ class LLMGenerator:
             item=item, scenario_type=scenario_type,
             target_turns=target_turns, template=self._template,
         )
+        # DEBUG: full prompt content
+        logger.debug("sft_prompt", extra={
+            "stage": "sft", "item_id": item_id,
+            "scenario_type": scenario_type, "target_turns": target_turns,
+            "prompt": prompt,
+        })
         resp = self._llm.complete(prompt, temperature=0.7, item_id=item_id)
+        # DEBUG: raw LLM response
+        logger.debug("sft_raw_response", extra={
+            "stage": "sft", "item_id": item_id, "response": resp,
+        })
         if not isinstance(resp, dict):
             raise ValidationError(f"LLM response not a dict: {type(resp).__name__}")
-        return parse_sft_response(resp)
+
+        result = parse_sft_response(resp, self._param_fields)
+        logger.info("sft_result", extra={
+            "stage": "sft", "item_id": item_id,
+            "scenario_type": scenario_type,
+            "has_guide_text": bool(result.get("guide_text")),
+            "guide_text_len": len(result.get("guide_text", "")),
+            "msg_count": len(result.get("messages", [])),
+            "param_keys": list(result.get("params", {}).keys()),
+        })
+        return result
 
 
 __all__ = ["LLMGenerator", "parse_sft_response"]

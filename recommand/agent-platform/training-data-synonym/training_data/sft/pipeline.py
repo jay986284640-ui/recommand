@@ -9,13 +9,13 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from ..common.config import Config
-from ..common.exceptions import ValidationError
 from ..common.llm_client import LLMClient
 from ..common.logging import get_logger
 from ..data_model import ItemTags, Role, SFTSample
@@ -66,7 +66,10 @@ class SFTPipeline:
         self.summary = SFTSummary()
 
         self.prompt_template = load_template(prompt_template_path)
-        self.llm_generator = LLMGenerator(llm_client, self.prompt_template)
+        sft_cfg = (config.pipeline.get("training_data") or {}).get("sft", {})
+        self.tag_keys = set(sft_cfg.get("tag_keys", [])) or self._FALLBACK_TAG_KEYS
+        self.concurrency = int(sft_cfg.get("concurrency", 4))
+        self.llm_generator = LLMGenerator(llm_client, self.prompt_template, self.tag_keys)
 
         self._rng = random.Random(42)
         self.scenario_sampler = ScenarioSampler(self._rng)
@@ -79,12 +82,27 @@ class SFTPipeline:
         items = self._load_items()
 
         all_samples: list[SFTSample] = []
-        for it in items:
-            samples = self._process_item(it)
-            all_samples.extend(samples)
+        total = len(items)
+        done = 0
+        with ThreadPoolExecutor(max_workers=self.concurrency) as pool:
+            futures = {pool.submit(self._process_item, it): it for it in items}
+            for fut in as_completed(futures):
+                done += 1
+                logger.info("sft_progress", extra={
+                    "stage": "sft", "progress": f"{done}/{total}",
+                    "item_id": futures[fut].item_id,
+                })
+                try:
+                    samples = fut.result()
+                    all_samples.extend(samples)
+                except Exception as e:
+                    logger.warning("sft_item_failed", extra={
+                        "stage": "sft", "item_id": futures[fut].item_id, "error": str(e),
+                    })
 
         # Dedup by params: keep up to 3 per unique params key
         from collections import Counter
+
         key_counts: Counter = Counter()
         deduped: list[SFTSample] = []
         for s in all_samples:
@@ -121,25 +139,40 @@ class SFTPipeline:
 
     # ---- item loading --------------------------------------------------
 
+    _FALLBACK_TAG_KEYS = {
+        "brand", "category", "taste", "occasion", "consumable_type", "avg_prc", "distance",
+    }
+
     def _load_items(self) -> list[ItemTags]:
         if not self.input_path.exists():
-            raise FileNotFoundError(f"item_tags.jsonl not found: {self.input_path}")
+            raise FileNotFoundError(f"input not found: {self.input_path}")
         items: list[ItemTags] = []
         with self.input_path.open(encoding="utf-8") as f:
             for line in f:
                 if not line.strip():
                     continue
                 rec = json.loads(line)
-                if rec.get("_format_version") != "item_tags_v2":
-                    raise ValidationError(
-                        f"item_tags version mismatch: expected item_tags_v2"
-                    )
+
+                # Auto-detect format: nested "tags" dict → item_tags_v2; flat → generic
+                tags = rec.get("tags")
+                if isinstance(tags, dict):
+                    # item_tags_v2 format
+                    raw_record = rec.get("raw_record", {})
+                    item_id = rec.get("item_id", "")
+                    item_type = rec.get("item_type", "mt_shop")
+                else:
+                    # Generic flat format — auto-extract tag keys from config
+                    tags = {k: rec[k] for k in self.tag_keys if k in rec and rec[k] is not None}
+                    raw_record = {k: v for k, v in rec.items() if k not in self.tag_keys}
+                    item_id = rec.get("str_id", rec.get("item_id", ""))
+                    item_type = rec.get("item_type", "meituan_shop")
+
                 items.append(
                     ItemTags(
-                        item_id=rec["item_id"],
-                        item_type=Role(rec["item_type"]),
-                        raw_record=rec.get("raw_record", {}),
-                        tags=rec["tags"],
+                        item_id=str(item_id),
+                        item_type=Role(item_type),
+                        raw_record=raw_record,
+                        tags=tags,
                         tag_source=None,
                         enriched_at=datetime.utcnow(),
                         llm_model=rec.get("llm_model", ""),
@@ -152,7 +185,6 @@ class SFTPipeline:
     def _process_item(self, item: ItemTags) -> list[SFTSample]:
         item_view = dict(item.tags)
         item_view["str_nm"] = item.raw_record.get("str_nm", "")
-        item_view["avg_prc"] = item.raw_record.get("avg_prc", "")
 
         samples: list[SFTSample] = []
         for _ in range(self.count_per_item):
@@ -175,33 +207,49 @@ class SFTPipeline:
             except Exception as e:
                 self.summary.sft_failures += 1
                 self.failures.append(
-                    SFTFailure(item_id=item.item_id, raw_response=None,
-                               error="GenError", error_detail=str(e), target_params={})
+                    SFTFailure(
+                        item_id=item.item_id,
+                        raw_response=None,
+                        error="GenError",
+                        error_detail=str(e),
+                        target_params={},
+                    )
                 )
 
         return samples
 
-    def _build_sample(self, item: ItemTags, result: dict, assigned_type: str) -> Optional[SFTSample]:
+    def _build_sample(
+        self, item: ItemTags, result: dict, assigned_type: str
+    ) -> Optional[SFTSample]:
         messages = result["messages"]
         if len(messages) > self.max_message_turns:
             messages = messages[: self.max_message_turns]
 
         sample = SFTSample(
-            item_id=item.item_id, item_type=item.item_type,
-            intent=result.get("intent", "search_product"), messages=messages,
-            params=result["params"], guide_text=result["guide_text"],
-            order_by=None, scenario_type=assigned_type,
+            item_id=item.item_id,
+            item_type=item.item_type,
+            intent=result.get("intent", "search_product"),
+            messages=messages,
+            params=result["params"],
+            guide_text=result["guide_text"],
+            order_by=None,
+            scenario_type=assigned_type,
             llm_model=self.llm_generator.model_name,
         )
 
-        ok, errs = validate_sft_sample(sample, self.config.dim_dictionary,
-                                       max_turns=self.max_message_turns)
+        ok, errs = validate_sft_sample(
+            sample, self.config.dim_dictionary, max_turns=self.max_message_turns,
+        )
         if not ok:
             self.summary.sft_failures += 1
             self.failures.append(
-                SFTFailure(item_id=item.item_id, raw_response=None,
-                           error="Validation", error_detail="; ".join(errs),
-                           target_params=result["params"])
+                SFTFailure(
+                    item_id=item.item_id,
+                    raw_response=None,
+                    error="Validation",
+                    error_detail="; ".join(errs),
+                    target_params=result["params"],
+                )
             )
             return None
         return sample
@@ -232,6 +280,7 @@ class SFTPipeline:
 
     def _print_distribution(self, samples: list[SFTSample], label: str, total: int) -> None:
         from collections import Counter
+
         c = Counter(s.scenario_type for s in samples)
         print(f"\n--- {label} ({total} samples) ---")
         for t in sorted(c):

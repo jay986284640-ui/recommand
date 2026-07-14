@@ -35,17 +35,8 @@ def build_sft_prompt(
     """Substitute ``{item}``, ``{scenario_type}``, ``{target_turns}``."""
     import json
 
-    item_view = {
-        "category": item.get("category"),
-        "brand": item.get("brand"),
-        "taste": item.get("taste"),
-        "occasion": item.get("occasion"),
-        "consumable_type": item.get("consumable_type"),
-        "distance": item.get("distance"),
-        "price": item.get("price") or item.get("avg_prc"),
-        "str_nm": item.get("str_nm"),
-    }
-    item_view = {k: v for k, v in item_view.items() if v is not None}
+    # Use whatever fields the item has (config-driven, no hardcoded field names)
+    item_view = {k: v for k, v in item.items() if v is not None}
 
     return (
         template.replace(

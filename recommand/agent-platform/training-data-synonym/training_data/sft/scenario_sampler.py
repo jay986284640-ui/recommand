@@ -7,15 +7,16 @@ from collections import Counter
 
 # Default distribution matching the spec table
 DEFAULT_DISTRIBUTION = {
-    "single_turn":         0.15,  # 单轮简单查询
-    "single_multi_cond":   0.20,  # 单轮多条件查询
-    "add_condition":       0.25,  # 多轮新增条件
+    "single_turn":         0.12,  # 单轮简单查询
+    "single_multi_cond":   0.18,  # 单轮多条件查询
+    "add_condition":       0.22,  # 多轮新增条件
     "modify_condition":    0.10,  # 多轮修改条件
     "remove_condition":    0.05,  # 多轮删除条件
     "negative_condition":  0.10,  # 否定/排除条件
     "reference_resolution": 0.05,  # 指代消解
     "intent_switch":       0.05,  # 意图切换
-    "single_multi_complex": 0.05,  # 单轮复杂条件（与single_multi_cond合并为20%）
+    "single_multi_complex": 0.05,  # 单轮复杂条件
+    "vague_query":          0.08,  # 无意图模糊查询（"随便看看/有啥推荐"）
 }
 
 
@@ -66,6 +67,7 @@ SCENARIO_MAP = {
     "negative_condition": "negative_condition — 否定/排除需求",
     "reference_resolution": "reference_resolution — 指代消解",
     "intent_switch": "intent_switch — 意图切换",
+    "vague_query": "vague_query — 用户无明确意图（'随便看看/有啥推荐/附近有什么好吃的'），assistant引导用户细化需求",
 }
 
 
