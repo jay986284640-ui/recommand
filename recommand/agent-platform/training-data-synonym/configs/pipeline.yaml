@@ -39,7 +39,7 @@ training_data:
     llm:
       model: deepseek-chat
       provider: openai_compat
-      api_key: sk-ef5f2293bc234e5c8bf21346a1e9065c
+      api_key: 
       base_url: https://api.deepseek.com/v1
       timeout_seconds: 30
       max_tokens: 1024
@@ -66,7 +66,7 @@ training_data:
     llm:
       model: deepseek-chat
       provider: openai_compat
-      api_key: sk-ef5f2293bc234e5c8bf21346a1e9065c
+      api_key: 
       base_url: https://api.deepseek.com/v1
       timeout_seconds: 30
       max_tokens: 2048
