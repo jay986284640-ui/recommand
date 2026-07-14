@@ -20,7 +20,7 @@ def test_ratio_always_filled():
     for _ in range(20):
         out = s.sample_distance_param()
         assert out is not None
-        assert out["op"] in {"in", "not_in"}
+        assert out["op"] in {"in", "not contains"}
         assert "0-500" in out["values"] or "500-1000" in out["values"] or "1000-3000" in out["values"] or "3000+" in out["values"]
 
 
@@ -28,7 +28,7 @@ def test_negative_inverts_op():
     rng = random.Random(0)
     s = DistanceSampler(rng, distance_param_ratio=1.0)
     out = s.sample_distance_param(is_negative=True)
-    assert out["op"] == "not_in"
+    assert out["op"] == "not contains"
 
 
 def test_order_by_distance_present_couples_high():

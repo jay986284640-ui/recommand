@@ -201,6 +201,7 @@ class SFTSample:
     params: dict[str, Optional[Any]]  # {field: [{"op":...,"values":[...]}] or null}
     guide_text: str = ""
     order_by: Optional[str] = None
+    scenario_type: str = ""
     negative: bool = False
     negative_type: Optional[str] = None
     covered_dims: list[str] = field(default_factory=list)
@@ -221,6 +222,7 @@ class SFTSample:
                 "item_id": self.item_id,
                 "item_type": self.item_type.value,
                 "intent": self.intent,
+                "scenario_type": self.scenario_type,
                 "generated_at": self.generated_at.strftime("%Y-%m-%dT%H:%M:%SZ"),
                 "llm_model": self.llm_model,
             },

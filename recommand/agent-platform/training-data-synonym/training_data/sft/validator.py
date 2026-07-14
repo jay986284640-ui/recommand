@@ -42,7 +42,9 @@ def validate_sft_sample(
     if not isinstance(sample.params, dict):
         errors.append("params is not a dict")
     else:
-        valid_ops = {"contains", "not contains", "between", "gte", "lte", "gt", "lt", "eq", "in"}
+        text_ops = {"contains", "not_contains"}
+        numeric_ops = {"gt", "gte", "lt", "lte", "between", "in", "not_in"}
+        numeric_fields = {"distance", "price"}
         for field, val in sample.params.items():
             if val is None:
                 continue
@@ -54,15 +56,17 @@ def validate_sft_sample(
                     errors.append(f"params.{field}[{i}] not a dict")
                     continue
                 op = item.get("op", "")
-                if op not in valid_ops:
-                    errors.append(f"params.{field}[{i}].op '{op}' not in {valid_ops}")
+                allowed = numeric_ops if field in numeric_fields else text_ops
+                if op not in allowed:
+                    errors.append(f"params.{field}[{i}].op '{op}' not in {allowed}")
                 vals = item.get("values")
                 if not isinstance(vals, list):
                     errors.append(f"params.{field}[{i}].values not a list")
 
-    # 4. intent must be in allowed set
-    if sample.intent not in {"search_item", "use_coupon", "pay", "view_order", "browse"}:
-        errors.append(f"intent '{sample.intent}' not in allowed set")
+    # 4. intent
+    valid_intents = {"search_item", "search_product", "use_coupon", "pay", "view_order", "browse"}
+    if sample.intent not in valid_intents:
+        errors.append(f"intent '{sample.intent}' not in {valid_intents}")
 
     return (len(errors) == 0, errors)
 

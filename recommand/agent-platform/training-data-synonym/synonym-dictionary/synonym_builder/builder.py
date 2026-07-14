@@ -156,17 +156,29 @@ def _merge_overlapping_groups(groups: list[list[str]]) -> list[list[str]]:
 # ---------------------------------------------------------------------------
 
 
-def _write_solr_synonyms(groups: list[list[str]], out_path: Path) -> int:
-    """Write synonym groups in ES Solr multi-way format."""
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    written = 0
-    with out_path.open("w", encoding="utf-8") as f:
+def _write_solr_synonyms(groups: list[list[str]], out_dir: Path) -> int:
+    """Write two files:
+
+    - ``ext_dict.txt`` — 分词词表（一行一词，IK ext_dict）
+    - ``ext_synonyms.txt`` — 同义词词表（逗号分隔分组，ES synonym_graph）
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    all_tokens: set[str] = set()
+
+    # Synonym groups (comma-separated)
+    with (out_dir / "ext_synonyms.txt").open("w", encoding="utf-8") as sf:
         for g in groups:
             if len(g) <= 1:
                 continue
-            f.write(", ".join(g) + "\n")
-            written += 1
-    return written
+            sf.write(", ".join(g) + "\n")
+            all_tokens.update(g)
+
+    # Flat token list (one per line)
+    with (out_dir / "ext_dict.txt").open("w", encoding="utf-8") as df:
+        for t in sorted(all_tokens):
+            df.write(f"{t}\n")
+
+    return len(all_tokens)
 
 
 def _write_meta(out_dir: Path, *, total_groups: int, total_written: int,
@@ -253,14 +265,15 @@ def build_synonyms(
     stats["total_groups"] = len(merged)
 
     # ---- write ----
-    total_written = _write_solr_synonyms(merged, out_dir / "synonyms_solr.txt")
+    total_written = _write_solr_synonyms(merged, out_dir)
     stats["total_written"] = total_written
     _write_meta(out_dir, total_groups=len(merged), total_written=total_written, stats=stats)
 
     print(f"\n=== Synonyms generated ===")
     for k, v in stats.items():
         print(f"  {k}: {v}")
-    print(f"  → {out_dir / 'synonyms_solr.txt'}")
+    print(f"  → {out_dir / 'ext_synonyms.txt'}   (同义词词表)")
+    print(f"  → {out_dir / 'ext_dict.txt'}        (分词词表)")
     print(f"  → {out_dir / 'synonyms_meta.json'}")
 
     return stats

@@ -496,7 +496,8 @@ def cmd_generate_synonyms(args) -> int:
     print(f"\n=== Synonyms generated ===")
     for k, v in stats.items():
         print(f"  {k}: {v}")
-    print(f"  → {output_dir / 'synonyms_solr.txt'}")
+    print(f"  → {output_dir / 'ext_synonyms.txt'}   (同义词)")
+    print(f"  → {output_dir / 'ext_dict.txt'}        (分词)")
     print(f"  → {output_dir / 'synonyms_meta.json'}")
     return 0
 
@@ -507,42 +508,23 @@ def cmd_sft(args) -> int:
     llm = build_llm_client(**settings)
     from ..sft.pipeline import SFTPipeline
 
-    # Resolve dict_snapshot path
-    dict_snapshot = (
-        Path(args.dict_snapshot)
-        if getattr(args, "dict_snapshot", None)
-        else Path("output/stage1/dim_dictionary_snapshot.yaml")
-    )
-    if not dict_snapshot.exists():
-        print(f"WARNING: dim_dictionary_snapshot.yaml not found: {dict_snapshot}")
-        print(f"  Run Stage 1 extract-tags first for better coverage")
-        dict_snapshot = None
-
-    sft_cfg = (cfg.pipeline.get("training_data") or {}).get("sft") or {}
-    coverage_cfg = sft_cfg.get("coverage") or {}
-
     pipeline = SFTPipeline(
         config=cfg,
         llm_client=llm,
         input_path=args.input,
         output_dir=args.output_dir,
-        dict_snapshot_path=str(dict_snapshot) if dict_snapshot else None,
-        tables_config_path=args.tables_config,
         count_per_item=getattr(args, "count_per_item", 8),
-        max_message_turns=getattr(args, "max_message_turns", 5),
-        negative_ratio=getattr(args, "negative_ratio", 0.10),
-        coverage_min_samples_per_value=coverage_cfg.get("min_per_value", 2),
-        coverage_positive_ratio=coverage_cfg.get("positive_ratio", 0.6),
+        max_message_turns=getattr(args, "max_message_turns", 9),
+        max_items=getattr(args, "max_items", None),
     )
     summary = pipeline.run()
     print(
-        f"Stage 2 complete: {summary.total} samples, "
-        f"{summary.sft_failures} failures, "
-        f"{summary.forced_coverage_count} forced_coverage"
+        f"Stage 3 complete: {summary.total} samples, "
+        f"{summary.sft_failures} failures"
     )
     print(f"  intent_distribution: {summary.intent_distribution}")
-    print(f"  coverage_pass: {summary.coverage_pass}")
-    return 0 if (summary.coverage_pass and summary.sft_failures == 0) else 1
+    print(f"  scenario_distribution: {summary.scenario_distribution}")
+    return 0 if summary.sft_failures == 0 else 1
 
 
 def cmd_split(args) -> int:
@@ -914,16 +896,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Stage 3: sft (合成 SFT 数据)
     sp = sub.add_parser(
-        "sft", help="Stage 3: 合成 SFT 数据 (item_tags → sft_corpus.jsonl)", parents=[parent]
+        "sft", help="Stage 3: 合成 SFT 语料 (item_tags → sft_corpus.jsonl)", parents=[parent]
     )
-    sp.add_argument("--input", type=Path, required=True, help="item_tags.jsonl from Stage 1/2")
+    sp.add_argument("--input", type=Path, required=True, help="item_tags.jsonl")
     sp.add_argument("--output-dir", type=Path, default=Path("./out_sft"))
-    sp.add_argument("--dict-snapshot", type=Path, default=None,
-                    help="Stage 1 dim_dictionary_snapshot.yaml for coverage planning")
     sp.add_argument("--count-per-item", type=int, default=8)
-    sp.add_argument("--max-message-turns", type=int, default=5)
-    sp.add_argument("--negative-ratio", type=float, default=0.10)
-    sp.add_argument("--seed", type=int, default=42)
+    sp.add_argument("--max-message-turns", type=int, default=9)
+    sp.add_argument("--max-items", type=int, default=None,
+                    help="最多处理的 item 数（默认全部）")
     sp.set_defaults(func=cmd_sft)
 
     # extract-dictionary (legacy alias for extract-tags)

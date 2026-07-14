@@ -25,13 +25,13 @@ OP_BY_DIM: dict[str, set[str]] = {
     "consumable_type": {"eq"},
     "brand": {"in"},
     "avg_prc": {"in"},
-    "distance": {"in", "not_in"},
+    "distance": {"in", "not contains"},
     "age": {"in"},
     "occasion": {"in"},
-    "taste": {"contains", "not_in"},
+    "taste": {"contains", "not contains"},
 }
 
-IMPLEMENTED_OPS: set[str] = {"eq", "in", "contains", "not_in"}
+IMPLEMENTED_OPS: set[str] = {"eq", "in", "contains", "not contains"}
 RESERVED_OPS: set[str] = {"gt", "lt", "between"}  # rejected by validator
 
 
@@ -93,7 +93,7 @@ def validate_params(
         if op == "eq":
             if not isinstance(v, str):
                 errors.append(f"{dim}.values must be str for op=eq")
-        elif op in {"in", "contains", "not_in"}:
+        elif op in {"in", "contains", "not contains"}:
             if not isinstance(v, list) or not all(isinstance(x, str) for x in v):
                 errors.append(f"{dim}.values must be array<string> for op={op}")
             elif len(v) == 0:

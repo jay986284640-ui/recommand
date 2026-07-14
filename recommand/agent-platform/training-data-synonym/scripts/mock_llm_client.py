@@ -315,7 +315,7 @@ class MockLLMClient:
         if negative_type == "reject" and ai_tags.get("taste"):
             taste = ai_tags["taste"]
             if isinstance(taste, list) and taste:
-                params["taste"] = {"op": "not_in", "values": [taste[0]]}
+                params["taste"] = {"op": "not contains", "values": [taste[0]]}
 
         return params
 

@@ -1,28 +1,139 @@
-你是一个生活服务领域的对话生成专家。你的任务是：给定了目标参数（params），生成一段自然的用户多轮对话，以及助手的引导语。
+你是一名专业的本地生活推荐Agent训练数据生成专家。
 
-# 目标参数（从这段对话中应能提取出以下参数）
-{target_params}
+你的任务是：
+根据输入的一条商品数据，生成用于训练推荐Agent的多轮SFT训练样本。
 
-# 字段定义（供参考，帮助你写出符合参数约束的对话）
-{field_definitions}
+训练目标：让模型学习——
+1. 理解用户自然语言消费需求
+2. 根据上下文理解用户真实意图
+3. 维护多轮查询条件
+4. 将用户需求转换为结构化检索参数
+5. 生成推荐引导语 guide_text
 
-# 要求
-1. 生成 {target_turns} 轮对话，用户必须说第一句
-2. 用户的表述要**自然口语化**，每次生成要使用不同的句式、语气、用词，避免重复
-3. guide_text 是助手对用户需求的**总结确认**，用自然语言复述用户的约束条件
-   - 格式多样化：有时简洁确认，有时详细总结，有时追问缺失维度
-   - **不要**在 guide_text 中具体推荐某家店（如"推荐XX店"）
-   - **不要**每句都用"好的/明白了"开头
-   - 示例多样风格："帮您确认一下，您要的是...对吧？"、"收到，我记一下：品类咖啡、人均50以内"、"总结一下您的需求..."
-4. 严格 JSON 输出
+====================
+输入
+====================
 
-# Output Format
-{{
-  "messages": [
-    {{"role": "user", "content": "用户的第一句话"}},
-    {{"role": "assistant", "content": "助手的追问或确认"}},
-    {{"role": "user", "content": "用户补充或确认需求"}},
-    {{"role": "assistant", "content": "..."}}
+{item}
+
+====================
+生成目标
+====================
+
+围绕输入商品生成一段真实用户与推荐Agent的多轮对话。
+
+要求：
+1. 用户最终需求可以匹配当前商品
+2. 生成的params能够表达用户最终需求
+3. Agent回复只生成推荐引导语，不展示商品
+
+本次生成类型：{scenario_type}
+
+====================
+conversation 生成规则
+====================
+
+生成{target_turns}轮对话（用户+助手各算一轮）。格式：
+
+user: 用户真实咨询内容
+assistant: 推荐Agent回复内容
+
+用户表达必须符合真实消费场景，禁止直接描述字段：
+  ✗ "我要category是咖啡，price小于30"
+  ✓ "附近有没有便宜一点的咖啡"
+
+多轮支持以下类型：
+- add_condition: 追加条件（"价格不要超过30"）
+- modify_condition: 修改条件（"换成奶茶吧" 覆盖之前品类）
+- remove_condition: 删除条件（"距离不用限制了"）
+- negative_condition: 排除需求（"不要瑞幸"）
+- reference_resolution: 指代理解（"适合约会的吗" 指上文品类）
+- intent_switch: 意图切换（"算了，想吃火锅" 重置条件）
+
+多轮规则：
+- 历史有效条件必须被后续继承
+- 修改覆盖旧条件，删除移除条件
+- 意图切换时只保留新意图条件
+
+====================
+Assistant 回复规则
+====================
+
+assistant回复代表推荐Agent生成的guide_text。
+
+禁止：输出商品名称、商品列表、价格、查询参数、解释。
+
+只生成引导用户点击卡片的自然语言，20-50字。
+
+示例："已经帮你筛选符合需求的优惠，点击下方卡片查看详情"
+
+====================
+params 结构
+====================
+
+params 固定字段：category / brand / distance / price / taste / occasion / consumable_type
+- 用户未提及的字段设为 null，不要凭空创造
+- 用户提到的字段按实际语义选择 op 和 values
+- **price 必须提取**：用户说到"人均X/预算X/价格X/X块/X元/便宜/贵"等必须写入 price，不要遗漏
+  示例：用户说"人均100以内" → price: [{"op": "lt", "values": [100]}]
+  用户说"人均三五十" → price: [{"op": "between", "values": [30, 50]}]
+  只有用户完全没提价格/预算时 price 才为 null
+
+consumable_type 规则：除非用户明确说"想吃/想喝/找吃的/找喝的/喝点/吃点"等，否则 consumable_type 保持 null。
+
+字段说明：
+- category/brand/taste/occasion/consumable_type: 文本字段，op 支持 contains / not_contains
+- distance/price: 数字字段。distance 用 in；price 用 gte/lte 或 between
+  示例: 人均100多 → [{"op":"gte","values":[100]},{"op":"lte","values":[200]}]
+  示例: 人均100以内 → [{"op":"lt","values":[100]}]
+
+not_contains 示例（排除需求）：
+{"category": [{"op": "contains", "values": ["咖啡"]}, {"op": "not_contains", "values": ["奶茶"]}]}
+
+数字字段示例：
+{"price": [{"op": "lt", "values": [30]}]}
+{"distance": [{"op": "between", "values": [500, 1000]}]}
+
+约束：
+- values 必须来自当前商品已有属性或用户明确表达
+- 不允许创造不存在的品牌/品类/口味/场景
+- 用户未表达的信息保持 null
+- 同一字段允许多个 condition
+
+====================
+数据难度分布
+====================
+
+随机覆盖：
+  20% 单条件 | 30% 多条件组合 | 20% 多轮新增条件
+  10% 条件修改 | 10% 条件删除 | 10% 否定和复杂组合
+
+====================
+输出格式（严格 JSON）
+====================
+
+{
+  "conversation": [
+    {"role": "user", "content": "..."},
+    {"role": "assistant", "content": "..."}
   ],
-  "guide_text": "助手对用户需求的总结/确认（不推荐具体店铺）"
-}}
+  "intent": "search_product",
+  "scenario_type": "add_condition",
+  "state_change": {"action": "add", "field": "price"},
+  "params": {
+    "category": null,
+    "brand": null,
+    "distance": null,
+    "price": null,
+    "taste": null,
+    "occasion": null,
+    "consumable_type": null
+  },
+  "guide_text": "..."
+}
+
+scenario_type: single_turn | add_condition | modify_condition |
+               remove_condition | negative_condition |
+               reference_resolution | intent_switch
+
+不要输出任何JSON之外的解释。

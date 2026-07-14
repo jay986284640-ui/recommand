@@ -1,126 +1,70 @@
-"""llm_generator — Stage 3: parameter-extraction dialogue generator.
+"""llm_generator — Stage 3: dialogue generator.
 
-Generates natural multi-turn user conversations whose semantics correspond
-to given target params. The LLM returns {messages, guide_text}.
+Prompts the LLM with item data; parses the response into conversation,
+params, intent, scenario_type, state_change, and guide_text.
 """
 
 from __future__ import annotations
-
-import json
-from typing import Optional
 
 from ..common.exceptions import ValidationError
 from ..common.llm_client import LLMClient
 from ..common.logging import get_logger
 from ..data_model import MessageTurn
+from .prompt import build_sft_prompt
 
 logger = get_logger(__name__)
 
-
-def build_field_definitions(dim_dictionary: dict, passthrough_fields: list[str]) -> str:
-    """Build field definition text dynamically from dictionary + passthrough columns.
-
-    Args:
-        dim_dictionary: The ``dim_dictionary_snapshot.yaml`` content.
-        passthrough_fields: Column names from ``tables.yaml`` to pass through
-            (e.g. ``["distance", "avg_prc"]``).
-
-    Returns:
-        Multi-line numbered field definition string for the SFT prompt.
-    """
-    lines: list[str] = []
-    idx = 1
-
-    for dim_name, dim_info in dim_dictionary.items():
-        if dim_name.startswith("_"):
-            continue
-        desc = dim_info.get("desc", dim_name) if isinstance(dim_info, dict) else dim_name
-        vals = dim_info.get("values", []) if isinstance(dim_info, dict) else []
-        examples = ", ".join(str(v) for v in vals[:8])
-        lines.append(f"{idx}. **{dim_name}**: {desc}（如：{examples}）")
-        idx += 1
-
-    for col in passthrough_fields:
-        if col == "distance":
-            lines.append(f"{idx}. **distance**: 距离要求（单位km，如：0-500, 500-1000）")
-        elif col == "avg_prc":
-            lines.append(f"{idx}. **avg_prc**: 人均价格要求（单位元）")
-        elif col == "store_name":
-            lines.append(f"{idx}. **store_name**: 门店名称模糊搜索（兜底检索字段，用户可能只记得部分店名）")
-        idx += 1
-
-    return "\n".join(lines)
+# Fields in the params schema (fixed set per prompt)
+_PARAMS_FIELDS = ["category", "brand", "distance", "price", "taste", "occasion", "consumable_type"]  # already correct
 
 
-def build_sft_prompt(
-    *,
-    target_params: dict,
-    target_turns: int,
-    item_name: str = "",
-    prompt_template: str,
-    field_definitions: str,
-) -> str:
-    """Build the parameter-extraction dialogue generation prompt."""
-    params_json = json.dumps(target_params, ensure_ascii=False, indent=2)
-
-    return (
-        prompt_template
-        .replace("{target_params}", params_json)
-        .replace("{target_turns}", str(target_turns))
-        .replace("{field_definitions}", field_definitions)
-    )
-
-
-def parse_sft_response(payload: dict) -> tuple[list[MessageTurn], str]:
-    """Parse LLM JSON → (messages, guide_text)."""
+def parse_sft_response(payload: dict) -> dict:
+    """Parse LLM JSON → dict with conversation, intent, params, guide_text etc."""
     if not isinstance(payload, dict):
         raise ValidationError("LLM response not a dict")
 
-    raw_msgs = payload.get("messages", [])
-    if not isinstance(raw_msgs, list):
-        raise ValidationError("messages field is not a list")
+    # conversation
+    raw_conv = payload.get("conversation", [])
+    if not isinstance(raw_conv, list):
+        raise ValidationError("conversation field is not a list")
 
     messages = []
-    for m in raw_msgs:
+    for m in raw_conv:
         if not isinstance(m, dict) or "role" not in m or "content" not in m:
             raise ValidationError(f"bad message entry: {m}")
         messages.append(MessageTurn(role=str(m["role"]), content=str(m["content"])))
 
-    guide_text = str(payload.get("guide_text", "") or "")
+    # params — validate and filter to known fields
+    params = payload.get("params") or {}
+    if not isinstance(params, dict):
+        params = {}
+    params = {k: v for k, v in params.items() if k in _PARAMS_FIELDS}
 
-    return messages, guide_text
+    return {
+        "messages": messages,
+        "params": params,
+        "guide_text": str(payload.get("guide_text", "") or ""),
+        "intent": str(payload.get("intent", "search_product") or "search_product"),
+        "scenario_type": str(payload.get("scenario_type", "") or ""),
+        "state_change": payload.get("state_change") or {},
+    }
 
 
 class LLMGenerator:
-    def __init__(
-        self,
-        llm_client: LLMClient,
-        prompt_template: str,
-        field_definitions: str = "",
-    ) -> None:
+    def __init__(self, llm_client: LLMClient, prompt_template: str) -> None:
         self._llm = llm_client
         self._template = prompt_template
-        self._field_definitions = field_definitions
 
     @property
     def model_name(self) -> str:
         return self._llm.model_name
 
-    def generate(
-        self,
-        *,
-        target_params: dict,
-        target_turns: int,
-        item_name: str = "",
-        item_id: str = "",
-    ) -> tuple[list[MessageTurn], str]:
-        """Generate a dialogue + guide_text for the given target params."""
+    def generate(self, *, item: dict, scenario_type: str, target_turns: int,
+                 item_id: str = "") -> dict:
+        """Generate a dialogue + params from item data + scenario + turn count."""
         prompt = build_sft_prompt(
-            target_params=target_params,
-            target_turns=target_turns,
-            item_name=item_name,
-            prompt_template=self._template,
-            field_definitions=self._field_definitions,
+            item=item, scenario_type=scenario_type,
+            target_turns=target_turns, template=self._template,
         )
         resp = self._llm.complete(prompt, temperature=0.7, item_id=item_id)
         if not isinstance(resp, dict):
@@ -128,9 +72,5 @@ class LLMGenerator:
         return parse_sft_response(resp)
 
 
-__all__ = [
-    "LLMGenerator",
-    "build_sft_prompt",
-    "build_field_definitions",
-    "parse_sft_response",
-]
+__all__ = ["LLMGenerator", "parse_sft_response"]
+

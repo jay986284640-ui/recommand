@@ -1,38 +1,28 @@
-"""SFTPipeline — Stage 3 orchestrator.
+"""SFTPipeline — Stage 3: item-driven SFT corpus generation.
 
-Reads item_tags.jsonl + dim_dictionary_snapshot.yaml → for each item:
-  1. Plan N samples (turns + covered_dims)
-  2. Assign intent (item_type biased)
-  3. Decide if negative (3 types)
-  4. Build target_params from item.tags + passthrough fields
-  5. Coverage planner: ensure each dict value appears in 包含/not_in scenarios
-  6. LLM generate → validate → write
+For each item, sends item data + scenario_type to LLM, which generates
+conversation + params + guide_text.  Outputs train.jsonl (80%) + test.jsonl (20%).
 """
+
 from __future__ import annotations
 
+import hashlib
 import json
 import random
-from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-import yaml
-
 from ..common.config import Config
 from ..common.exceptions import ValidationError
 from ..common.llm_client import LLMClient
 from ..common.logging import get_logger
-from ..common.versioning import SFT_CORPUS_V
-from ..data_model import DIM_ORDER, ItemTags, MessageTurn, Role, SFTSample
-from .distance_sampler import DistanceSampler
-from .diversity import DiversitySampler
+from ..data_model import ItemTags, Role, SFTSample
 from .failures import SFTFailure, SFTFailureWriter
-from .intent_assigner import IntentAssigner
-from .llm_generator import LLMGenerator, build_field_definitions
-from .negative_sampler import NegativeSampler
-from .sample_planner import SamplePlanner, get_non_null_dims
+from .llm_generator import LLMGenerator
+from .prompt import load_template
+from .scenario_sampler import ScenarioSampler, SCENARIO_MAP
 from .validator import validate_sft_sample
 from .writer import SFTSampleWriter
 
@@ -43,17 +33,12 @@ logger = get_logger(__name__)
 class SFTSummary:
     total: int = 0
     sft_failures: int = 0
-    forced_coverage_count: int = 0
+    train_count: int = 0
+    test_count: int = 0
     intent_distribution: dict = field(default_factory=dict)
-    coverage_positive: int = 0
-    coverage_negative: int = 0
-    coverage_pass: bool = False
+    scenario_distribution: dict = field(default_factory=dict)
     started_at: str = field(default_factory=lambda: datetime.utcnow().isoformat() + "Z")
     finished_at: Optional[str] = None
-
-
-# Passthrough columns from tables.yaml that supplement AI-inferred dimensions
-_PASSTHROUGH_FIELDS = ["distance", "avg_prc", "store_name"]
 
 
 class SFTPipeline:
@@ -65,13 +50,10 @@ class SFTPipeline:
         output_dir: str | Path,
         *,
         prompt_template_path: str | Path | None = None,
-        dict_snapshot_path: str | Path | None = None,
-        tables_config_path: str | Path | None = None,
         count_per_item: int = 8,
-        max_message_turns: int = 5,
-        negative_ratio: float = 0.10,
-        coverage_min_samples_per_value: int = 2,
-        coverage_positive_ratio: float = 0.6,
+        max_message_turns: int = 9,
+        train_ratio: float = 0.80,
+        max_items: int | None = None,
     ) -> None:
         self.config = config
         self.input_path = Path(input_path)
@@ -79,225 +61,63 @@ class SFTPipeline:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.count_per_item = count_per_item
         self.max_message_turns = max_message_turns
-        self.negative_ratio = negative_ratio
-        self.coverage_min = coverage_min_samples_per_value
-        self.coverage_pos_ratio = coverage_positive_ratio
+        self.train_ratio = train_ratio
+        self.max_items = max_items
         self.summary = SFTSummary()
 
-        # Prompt template
-        if prompt_template_path is None:
-            pt = Path(__file__).resolve().parent.parent.parent / "configs" / "prompts" / "sft_v1.txt"
-        else:
-            pt = Path(prompt_template_path)
-        self.prompt_template = pt.read_text(encoding="utf-8") if pt.exists() else ""
+        self.prompt_template = load_template(prompt_template_path)
+        self.llm_generator = LLMGenerator(llm_client, self.prompt_template)
 
-        # Load dim dictionary snapshot
-        if dict_snapshot_path:
-            self.dim_dict = yaml.safe_load(Path(dict_snapshot_path).read_text(encoding="utf-8")) or {}
-        else:
-            self.dim_dict = config.dim_dictionary
-
-        # Discover llm-inferred dims from snapshot (non-_meta keys with "values" list)
-        self._llm_dims = sorted(
-            k for k in self.dim_dict
-            if not k.startswith("_")
-            and isinstance(self.dim_dict[k], dict)
-            and "values" in self.dim_dict[k]
-        )
-
-        # Build dynamic field definitions
-        self.field_definitions = build_field_definitions(self.dim_dict, _PASSTHROUGH_FIELDS)
-
-        # Extract dict values per dimension
-        self._dict_values: dict[str, list] = {}
-        for d in self._llm_dims:
-            self._dict_values[d] = list((self.dim_dict[d] or {}).get("values", []) or [])
-
-        # RNG
         self._rng = random.Random(42)
+        self.scenario_sampler = ScenarioSampler(self._rng)
 
-        # Sub-samplers
-        self.distance_sampler = DistanceSampler(self._rng)
-        self.negative_sampler = NegativeSampler(self._rng, negative_ratio=negative_ratio)
-        self.diversity_sampler = DiversitySampler(self._rng)
-        self.intent_assigner = IntentAssigner(self._rng)
-        self.sample_planner = SamplePlanner(
-            count_per_item=count_per_item, max_turns=max_message_turns
-        )
-        self.llm_generator = LLMGenerator(
-            llm_client, self.prompt_template, self.field_definitions
-        )
-
-        # Writers
-        self.writer = SFTSampleWriter(self.output_dir / "sft_corpus.jsonl")
         self.failures = SFTFailureWriter(self.output_dir / "sft_failures.jsonl")
-
-        # Coverage tracking
-        self._cov_positive: dict[str, set] = defaultdict(set)  # dim -> {values covered}
-        self._cov_negative: dict[str, set] = defaultdict(set)
 
     # ---- main ----------------------------------------------------------
 
     def run(self) -> SFTSummary:
         items = self._load_items()
 
-        # Phase A: per-item generation (existing logic with order_by removed)
         all_samples: list[SFTSample] = []
         for it in items:
             samples = self._process_item(it)
             all_samples.extend(samples)
 
-        # Phase B: coverage-driven samples (包含/不包含)
-        cov_samples = self._generate_coverage_samples(items, all_samples)
-        all_samples.extend(cov_samples)
+        # Dedup by params: keep up to 3 per unique params key
+        from collections import Counter
+        key_counts: Counter = Counter()
+        deduped: list[SFTSample] = []
+        for s in all_samples:
+            key = json.dumps(s.params, sort_keys=True, ensure_ascii=False)
+            if key_counts[key] < 3:
+                key_counts[key] += 1
+                deduped.append(s)
+        dup_count = len(all_samples) - len(deduped)
+        if dup_count:
+            print(f"  Deduped: {dup_count} duplicates removed ({len(deduped)} kept)")
 
-        self.writer.write(all_samples)
+        # --max-items: limit final output count (not input items)
+        if self.max_items is not None and len(deduped) > self.max_items:
+            deduped = deduped[: self.max_items]
 
-        # Self-check
-        self._self_check(items, all_samples)
+        all_samples = deduped
+
+        # Train/test split by item_id md5 (stable, no leakage)
+        train, test = self._split_by_item(all_samples)
+        self._write_split(train, "train.jsonl")
+        self._write_split(test, "test.jsonl")
+
         self.summary.total = len(all_samples)
-        self.summary.intent_distribution = self.intent_assigner.distribution
-        self.summary.coverage_positive = sum(len(v) for v in self._cov_positive.values())
-        self.summary.coverage_negative = sum(len(v) for v in self._cov_negative.values())
+        self.summary.train_count = len(train)
+        self.summary.test_count = len(test)
+        self.summary.intent_distribution = self._count_intents(all_samples)
+        self.summary.scenario_distribution = self.scenario_sampler.distribution
         self.summary.finished_at = datetime.utcnow().isoformat() + "Z"
 
-        summary_path = self.output_dir / "summary.json"
-        existing = {}
-        if summary_path.exists():
-            try:
-                existing = json.loads(summary_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                pass
-        existing.update({"sft": self.summary.__dict__})
-        summary_path.write_text(
-            json.dumps(existing, ensure_ascii=False, indent=2, default=str),
-            encoding="utf-8",
-        )
+        self._write_summary()
+        self._print_distribution(train, "train", self.summary.train_count)
+        self._print_distribution(test, "test", self.summary.test_count)
         return self.summary
-
-    # ---- coverage planner -----------------------------------------------
-
-    def _generate_coverage_samples(
-        self, items: list[ItemTags], existing: list[SFTSample]
-    ) -> list[SFTSample]:
-        """Ensure every dictionary value is covered in both 包含 / not_in scenarios."""
-        # Track what's already covered
-        for s in existing:
-            for dim, constraints in s.params.items():
-                if not constraints or dim not in self._dict_values:
-                    continue
-                for c in constraints:
-                    op = c.get("op", "")
-                    vals = c.get("values", [])
-                    if op == "contains":
-                        for v in vals:
-                            self._cov_positive[dim].add(v)
-                    elif op == "not_in":
-                        for v in vals:
-                            self._cov_negative[dim].add(v)
-
-        samples: list[SFTSample] = []
-
-        for dim in self._llm_dims:
-            dict_vals = self._dict_values.get(dim, [])
-            if not dict_vals:
-                continue
-
-            # Positive coverage: value IS constrained
-            for val in dict_vals:
-                if val in self._cov_positive[dim]:
-                    continue
-                item = self._find_item_with_dim(items, dim, val)
-                if item is None:
-                    continue
-                sample = self._make_coverage_sample(item, dim, val, op="contains")
-                if sample:
-                    samples.append(sample)
-                    self._cov_positive[dim].add(val)
-
-            # Negative coverage: value is explicitly EXCLUDED (反选)
-            for val in dict_vals:
-                if val in self._cov_negative[dim]:
-                    continue
-                item = self._find_item_for_negative(items, dim, val)
-                if item is None:
-                    continue
-                sample = self._make_coverage_sample(item, dim, val, op="not_in")
-                if sample:
-                    samples.append(sample)
-                    self._cov_negative[dim].add(val)
-
-        return samples
-
-    def _find_item_with_dim(
-        self, items: list[ItemTags], dim: str, val: str
-    ) -> Optional[ItemTags]:
-        """Find an item whose tag for *dim* equals *val* (for 包含)."""
-        candidates = []
-        for it in items:
-            tag_val = it.tags.get(dim)
-            if tag_val is None:
-                continue
-            if isinstance(tag_val, list):
-                if val in tag_val:
-                    candidates.append(it)
-            elif str(tag_val) == val:
-                candidates.append(it)
-        return self._rng.choice(candidates) if candidates else None
-
-    def _find_item_for_negative(
-        self, items: list[ItemTags], dim: str, val: str
-    ) -> Optional[ItemTags]:
-        """Find an item that does NOT have *val* for *dim* (for 反选)."""
-        candidates = []
-        for it in items:
-            tag_val = it.tags.get(dim)
-            if tag_val is None:
-                candidates.append(it)
-                continue
-            if isinstance(tag_val, list):
-                if val not in tag_val:
-                    candidates.append(it)
-            elif str(tag_val) != val:
-                candidates.append(it)
-        return self._rng.choice(candidates) if candidates else None
-
-    def _make_coverage_sample(
-        self, item: ItemTags, dim: str, val: str, op: str
-    ) -> Optional[SFTSample]:
-        """Generate a single coverage sample for (dim, val, op)."""
-        params: dict = {d: None for d in DIM_ORDER}
-        params[dim] = [{"op": op, "values": [val]}]
-
-        # Add distance for realism
-        dist = self.distance_sampler.sample_distance_param(is_negative=(op == "not_in"))
-        if dist is not None:
-            params["distance"] = [dist]
-
-        try:
-            return self._generate_one(
-                item=item,
-                target_intent="search_item",
-                target_params=params,
-                target_turns=2,
-                negative=(op == "not_in"),
-                negative_type=None,
-                template="direct_first",
-                forced=True,
-                covered_dims_override=[dim],
-            )
-        except Exception as e:
-            self.summary.sft_failures += 1
-            self.failures.append(
-                SFTFailure(
-                    item_id=item.item_id,
-                    raw_response=None,
-                    target_params=params,
-                    error="CoverageFailure",
-                    error_detail=str(e),
-                )
-            )
-            return None
 
     # ---- item loading --------------------------------------------------
 
@@ -312,8 +132,7 @@ class SFTPipeline:
                 rec = json.loads(line)
                 if rec.get("_format_version") != "item_tags_v2":
                     raise ValidationError(
-                        f"item_tags version mismatch: expected item_tags_v2, "
-                        f"got {rec.get('_format_version')}"
+                        f"item_tags version mismatch: expected item_tags_v2"
                     )
                 items.append(
                     ItemTags(
@@ -331,226 +150,107 @@ class SFTPipeline:
     # ---- per-item processing -------------------------------------------
 
     def _process_item(self, item: ItemTags) -> list[SFTSample]:
-        self.diversity_sampler.reset(item.item_id)
+        item_view = dict(item.tags)
+        item_view["str_nm"] = item.raw_record.get("str_nm", "")
+        item_view["avg_prc"] = item.raw_record.get("avg_prc", "")
 
-        turn_counts = self.sample_planner.plan_turn_distribution(
-            n_samples=self.count_per_item, rng=self._rng
-        )
-        intents = self.intent_assigner.assign(item.item_type, count_per_item=self.count_per_item)
-
-        item_samples: list[SFTSample] = []
-        for i in range(self.count_per_item):
-            negative = self.negative_sampler.is_negative()
-            negative_type = self.negative_sampler.pick_type() if negative else None
-            target_params = self._build_target_params(item, negative, negative_type)
-            template = self.diversity_sampler.pick_template(item.item_id)
-            target_turns = turn_counts[i]
-
+        samples: list[SFTSample] = []
+        for _ in range(self.count_per_item):
+            scenario_type = self.scenario_sampler.pick()
+            # Turn distribution: 1-9 (5 user + 4 assistant max), bias 2-5
+            target_turns = self._rng.choices(
+                [1, 2, 3, 4, 5, 6, 7, 8, 9],
+                weights=[3, 25, 25, 20, 15, 6, 3, 2, 1],
+            )[0]
             try:
-                sample = self._generate_one(
-                    item=item,
-                    target_intent=intents[i],
-                    target_params=target_params,
+                result = self.llm_generator.generate(
+                    item=item_view,
+                    scenario_type=SCENARIO_MAP.get(scenario_type, scenario_type),
                     target_turns=target_turns,
-                    negative=negative,
-                    negative_type=negative_type,
-                    template=template,
-                    forced=False,
+                    item_id=item.item_id,
                 )
+                sample = self._build_sample(item, result, scenario_type)
                 if sample is not None:
-                    item_samples.append(sample)
+                    samples.append(sample)
             except Exception as e:
                 self.summary.sft_failures += 1
                 self.failures.append(
-                    SFTFailure(
-                        item_id=item.item_id,
-                        raw_response=None,
-                        target_params=target_params,
-                        error="Other",
-                        error_detail=str(e),
-                    )
+                    SFTFailure(item_id=item.item_id, raw_response=None,
+                               error="GenError", error_detail=str(e), target_params={})
                 )
 
-        # Force cover remaining non-null dims
-        covered = set()
-        for s in item_samples:
-            covered.update(s.covered_dims)
-        target_dims = set(get_non_null_dims(item))
-        uncovered = target_dims - covered
-        if uncovered:
-            for missing_dim in list(uncovered):
-                try:
-                    target_params = self._force_target_dim(item, missing_dim)
-                    sample = self._generate_one(
-                        item=item,
-                        target_intent="search_item",
-                        target_params=target_params,
-                        target_turns=2,
-                        negative=False,
-                        negative_type=None,
-                        template="direct_first",
-                        forced=True,
-                        covered_dims_override=[missing_dim],
-                    )
-                    if sample is not None:
-                        item_samples.append(sample)
-                        self.summary.forced_coverage_count += 1
-                except Exception as e:
-                    self.summary.sft_failures += 1
-                    self.failures.append(
-                        SFTFailure(
-                            item_id=item.item_id,
-                            raw_response=None,
-                            target_params=target_params,
-                            error="CoverageFailure",
-                            error_detail=str(e),
-                        )
-                    )
+        return samples
 
-        return item_samples
+    def _build_sample(self, item: ItemTags, result: dict, assigned_type: str) -> Optional[SFTSample]:
+        messages = result["messages"]
+        if len(messages) > self.max_message_turns:
+            messages = messages[: self.max_message_turns]
 
-    # ---- param building ------------------------------------------------
-
-    def _build_target_params(
-        self, item: ItemTags, negative: bool, negative_type: Optional[str]
-    ) -> dict:
-        """Build target params from item tags.
-
-        LLM-inferred dims use ``contains`` op.
-        Passthrough fields (distance, avg_prc) are sampled or derived.
-        No order_by.
-        """
-        params: dict = {d: None for d in DIM_ORDER}
-
-        for d in self._llm_dims:
-            if d not in DIM_ORDER:
-                continue
-            v = item.tags.get(d)
-            if v is None:
-                continue
-            if isinstance(v, list):
-                params[d] = [{"op": "contains", "values": v}]
-            else:
-                params[d] = [{"op": "contains", "values": [v]}]
-
-        # distance: sampled (numeric)
-        dist = self.distance_sampler.sample_distance_param(is_negative=negative)
-        if dist is not None:
-            params["distance"] = [dist]
-
-        # avg_prc: numeric range
-        raw_price = item.tags.get("avg_prc")
-        if raw_price is not None and params.get("avg_prc"):
-            try:
-                p = int(raw_price)
-                params["avg_prc"] = [{"op": "between", "values": [max(0, p - 10), p + 10]}]
-            except (ValueError, TypeError):
-                pass
-
-        # store_name: fuzzy text search fallback (15% of samples)
-        if self._rng.random() < self.coverage_pos_ratio * 0.25:
-            raw_name = item.raw_record.get("str_nm") or item.raw_record.get("shopname") or ""
-            if raw_name:
-                # Clean: strip location markers for partial match
-                import re
-                cleaned = re.sub(r"[（(][^）)]*[）)]", "", str(raw_name)).strip()
-                if cleaned:
-                    params["store_name"] = [{"op": "contains", "values": [cleaned]}]
-
-        return params
-
-    def _force_target_dim(self, item: ItemTags, missing_dim: str) -> dict:
-        params: dict = {d: None for d in DIM_ORDER}
-        v = item.tags.get(missing_dim)
-        if v is None:
-            return params
-        if isinstance(v, list):
-            params[missing_dim] = [{"op": "contains", "values": v}]
-        else:
-            params[missing_dim] = [{"op": "contains", "values": [v]}]
-        return params
-
-    # ---- generation ----------------------------------------------------
-
-    def _generate_one(
-        self,
-        *,
-        item: ItemTags,
-        target_intent: str,
-        target_params: dict,
-        target_turns: int,
-        negative: bool,
-        negative_type: Optional[str],
-        template: str,
-        forced: bool,
-        covered_dims_override: Optional[list[str]] = None,
-    ) -> Optional[SFTSample]:
-        item_name = str(item.raw_record.get("str_nm") or item.raw_record.get("shopname") or "")
-        messages, guide_text = self.llm_generator.generate(
-            target_params=target_params,
-            target_turns=target_turns,
-            item_name=item_name,
-            item_id=item.item_id,
-        )
-        covered = list({
-            k for k, v in target_params.items()
-            if v is not None and k not in ("distance",)
-        })
-        if covered_dims_override:
-            covered = list(set(covered) | set(covered_dims_override))
         sample = SFTSample(
-            item_id=item.item_id,
-            item_type=item.item_type,
-            intent=target_intent,
-            messages=messages,
-            params=target_params,
-            guide_text=guide_text,
-            order_by=None,
-            negative=negative,
-            negative_type=negative_type,
-            covered_dims=covered,
-            forced_coverage=forced,
-            generated_at=datetime.utcnow(),
+            item_id=item.item_id, item_type=item.item_type,
+            intent=result.get("intent", "search_product"), messages=messages,
+            params=result["params"], guide_text=result["guide_text"],
+            order_by=None, scenario_type=assigned_type,
             llm_model=self.llm_generator.model_name,
         )
-        ok, errs = validate_sft_sample(sample, self.dim_dict, max_turns=self.max_message_turns)
+
+        ok, errs = validate_sft_sample(sample, self.config.dim_dictionary,
+                                       max_turns=self.max_message_turns)
         if not ok:
             self.summary.sft_failures += 1
             self.failures.append(
-                SFTFailure(
-                    item_id=item.item_id,
-                    raw_response=None,
-                    target_params=target_params,
-                    error="DictValidation",
-                    error_detail="; ".join(errs),
-                )
+                SFTFailure(item_id=item.item_id, raw_response=None,
+                           error="Validation", error_detail="; ".join(errs),
+                           target_params=result["params"])
             )
             return None
-        if len(sample.messages) > self.max_message_turns:
-            sample.messages = sample.messages[: self.max_message_turns]
         return sample
 
-    # ---- self-check ----------------------------------------------------
+    # ---- split / write -------------------------------------------------
 
-    def _self_check(self, items: list[ItemTags], samples: list[SFTSample]) -> None:
-        per_item: dict[str, set[str]] = {}
+    def _split_by_item(self, samples: list[SFTSample]) -> tuple[list, list]:
+        """MD5-based split by item_id — stable, no leakage."""
+        train, test = [], []
         for s in samples:
-            per_item.setdefault(s.item_id, set()).update(s.covered_dims)
-        all_pass = True
-        for it in items:
-            target = set(get_non_null_dims(it))
-            covered = per_item.get(it.item_id, set())
-            if not target.issubset(covered):
-                all_pass = False
-                logger.warning(
-                    "coverage_failure",
-                    extra={
-                        "stage": "sft",
-                        "item_id": it.item_id,
-                        "missing": sorted(target - covered),
-                    },
-                )
-        self.summary.coverage_pass = all_pass
+            h = int(hashlib.md5(s.item_id.encode()).hexdigest(), 16) % 100
+            if h < int(self.train_ratio * 100):
+                train.append(s)
+            else:
+                test.append(s)
+        return train, test
+
+    def _write_split(self, samples: list[SFTSample], filename: str) -> None:
+        # Use a temporary writer to flush this split
+        writer = SFTSampleWriter(self.output_dir / filename)
+        writer.write(samples)
+
+    def _count_intents(self, samples: list[SFTSample]) -> dict:
+        d: dict = {}
+        for s in samples:
+            d[s.intent] = d.get(s.intent, 0) + 1
+        return d
+
+    def _print_distribution(self, samples: list[SFTSample], label: str, total: int) -> None:
+        from collections import Counter
+        c = Counter(s.scenario_type for s in samples)
+        print(f"\n--- {label} ({total} samples) ---")
+        for t in sorted(c):
+            pct = c[t] / total * 100 if total else 0
+            print(f"  {t:30s} {c[t]:>5} ({pct:5.1f}%)")
+
+    def _write_summary(self) -> None:
+        summary_path = self.output_dir / "summary.json"
+        existing = {}
+        if summary_path.exists():
+            try:
+                existing = json.loads(summary_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                pass
+        existing.update({"sft": self.summary.__dict__})
+        summary_path.write_text(
+            json.dumps(existing, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
 
 
 __all__ = ["SFTPipeline", "SFTSummary"]

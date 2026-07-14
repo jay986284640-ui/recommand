@@ -112,7 +112,7 @@ def test_negative_consistency(sft_path: Path):
 
 
 def test_param_op_in_4_set(sft_path: Path):
-    allowed = {"eq", "in", "contains", "not_in"}
+    allowed = {"eq", "in", "contains", "not contains"}
     with sft_path.open() as f:
         for line in f:
             if not line.strip():

@@ -324,7 +324,7 @@ def compute_distribution_stats(
     for dim, ratio in param_ratio.items():
         if ratio < 0.05:
             warnings.append(f"param.{dim} = {ratio:.2%} < 5%")
-    if op_dist.get("not_in", 0) < 0.03:
+    if op_dist.get("not contains", 0) < 0.03:
         warnings.append(f"op.not_in = {op_dist.get('not_in', 0):.2%} < 3%")
     if abs(neg_ratio - negative_ratio_target) > 0.02:
         warnings.append(f"negative_ratio = {neg_ratio:.2%} ≠ target {negative_ratio_target:.0%} ±2%")

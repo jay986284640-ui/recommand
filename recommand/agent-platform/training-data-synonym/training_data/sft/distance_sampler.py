@@ -10,7 +10,7 @@ from ..common.logging import get_logger
 logger = get_logger(__name__)
 
 DEFAULT_DISTANCE_BUCKETS = ["0-500", "500-1000", "1000-3000", "3000+"]
-NEGATIVE_OP = "not_in"
+NEGATIVE_OP = "not contains"
 
 
 class DistanceSampler:
