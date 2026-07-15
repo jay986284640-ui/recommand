@@ -1,5 +1,0 @@
-{"couponId": 800001, "couponName": "[券] 星巴克 30元代金券", "productDesc": "全场通用 满50减10 限堂食", "ruleDescription": "有效期至 2027-01-01,到店核销,不与其他优惠同享", "facePrice": 30.0, "creator": "OPERATOR_TEST", "updatePerson": "OPERATOR_TEST", "etl_dt": "20260620"}
-{"couponId": 800002, "couponName": "瑞幸咖啡 限时抢购 5折", "productDesc": "全场优惠券,周一至周五可用", "ruleDescription": "到店核销", "facePrice": 15.0, "creator": "OPERATOR_TEST", "updatePerson": "OPERATOR_TEST", "etl_dt": "20260620"}
-{"couponId": 800003, "couponName": "[券] 满100减20 元代金券", "productDesc": "全场通用", "ruleDescription": "不与其他优惠同享", "facePrice": 80.0, "creator": "OPERATOR_TEST", "updatePerson": "OPERATOR_TEST", "etl_dt": "20260620"}
-{"couponId": 800004, "couponName": "海底捞 8折优惠券", "productDesc": "全场通用 周末可用", "ruleDescription": "有效期至 2027-06-30,到店核销", "facePrice": 100.0, "creator": "OPERATOR_TEST", "updatePerson": "OPERATOR_TEST", "etl_dt": "20260620"}
-{"couponId": 800005, "couponName": "麦当劳优惠券 满50减10", "productDesc": "快餐通用", "ruleDescription": "周一至周五 限时抢购", "facePrice": 40.0, "creator": "OPERATOR_TEST", "updatePerson": "OPERATOR_TEST", "etl_dt": "20260620"}
