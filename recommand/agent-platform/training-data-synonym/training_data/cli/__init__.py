@@ -26,7 +26,6 @@ from ..common.exceptions import PipelineError
 from ..common.llm_client import LLMClient, build_llm_client
 from ..common.logging import configure_logging, get_logger
 from ..hive_reader.base import HiveReadSpec
-from ..hive_reader.mock_reader import MockHiveReader
 from ..enricher.pipeline import EnrichmentPipeline
 
 logger = get_logger(__name__)
@@ -133,12 +132,6 @@ def _resolve_tables_config(args) -> str:
 
 
 def _build_hive_reader(args, configs_dir: Path):
-    if args.source == "mock":
-        return MockHiveReader(
-            fixture_dir=configs_dir / "tests" / "fixtures" / "hive"
-            if False  # placeholder; resolve from --fixture-dir or default
-            else Path(args.fixture_dir or "tests/fixtures/hive")
-        )
     if args.source == "hive":
         from ..hive_reader.spark_reader import SparkHiveReader
 
@@ -162,7 +155,7 @@ def _build_hive_reader(args, configs_dir: Path):
             except Exception:
                 csv_dir = "../../knowledge_database"
         return CsvReader(csv_dir=csv_dir, delimiter=csv_delimiter)
-    raise ValueError(f"unknown source: {args.source} (expected 'mock', 'hive', or 'csv')")
+    raise ValueError(f"unknown source: {args.source} (expected 'hive' or 'csv')")
 
 
 def cmd_tables_meta(args) -> int:
@@ -860,7 +853,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Stage 1: 全量标签抽取 → dim_dictionary_snapshot.yaml",
         parents=[parent],
     )
-    sp.add_argument("--source", choices=["hive", "mock", "csv"], default="mock")
+    sp.add_argument("--source", choices=["hive", "csv"], default="csv")
     sp.add_argument("--fixture-dir", default="tests/fixtures/hive")
     sp.add_argument("--output-dir", default="dict_candidates")
     sp.add_argument("--frequency-min", type=int, default=10)
@@ -877,7 +870,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser(
         "enrich", help="Stage 2: 实际标注数据 (Hive → item_tags.jsonl)", parents=[parent]
     )
-    sp.add_argument("--source", choices=["hive", "mock", "csv"], default="mock")
+    sp.add_argument("--source", choices=["hive", "csv"], default="csv")
     sp.add_argument("--fixture-dir", default="tests/fixtures/hive")
     sp.add_argument("--n-items-per-type", type=int, default=None)
     sp.add_argument("--output-dir", type=Path, default=Path("./out"))
@@ -912,7 +905,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="(alias for extract-tags) Stage 1: 全量标签抽取",
         parents=[parent],
     )
-    sp.add_argument("--source", choices=["hive", "mock", "csv"], default="mock")
+    sp.add_argument("--source", choices=["hive", "csv"], default="csv")
     sp.add_argument("--fixture-dir", default="tests/fixtures/hive")
     sp.add_argument("--output-dir", default="dict_candidates")
     sp.add_argument("--frequency-min", type=int, default=10)
@@ -962,7 +955,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser(
         "all", help="Full pipeline: enrich → sft → split → verify", parents=[parent]
     )
-    sp.add_argument("--source", choices=["hive", "mock", "csv"], default="mock")
+    sp.add_argument("--source", choices=["hive", "csv"], default="csv")
     sp.add_argument("--fixture-dir", default="tests/fixtures/hive")
     sp.add_argument("--output-dir", type=Path, default=Path("./out_all"))
     sp.add_argument("--n-items-per-type", type=int, default=100)

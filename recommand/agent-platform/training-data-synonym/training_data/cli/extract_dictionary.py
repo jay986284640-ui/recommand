@@ -541,8 +541,6 @@ def _process_dimension(
 
 def extract(
     *,
-    source: str = "mock",
-    fixture_dir: str = "tests/fixtures/hive",
     tables_config_path: str | None = None,
     sql_path: str | None = None,
     output_dir: str = "dict_candidates",
@@ -580,10 +578,6 @@ def extract(
 
     # ---- reader -----------------------------------------------------------
 
-    if source == "mock":
-        from ..hive_reader.mock_reader import MockHiveReader
-        reader: HiveReader = MockHiveReader(fixture_dir=fixture_dir)
-    elif source == "hive":
         from ..hive_reader.spark_reader import SparkHiveReader
         reader = SparkHiveReader(
             hive_metastore_uri=hive_metastore_uri,
@@ -745,7 +739,6 @@ def extract(
 
 
 @click.command()
-@click.option("--source", default="mock", help="hive | mock")
 @click.option("--fixture-dir", default="tests/fixtures/hive",
               help="mock fixture dir")
 @click.option(
@@ -767,7 +760,6 @@ def extract(
               help="Phase 1 item_tags.jsonl (for LLM-inferred dims)")
 @click.option("--log-level", default="INFO")
 def main(
-    source, fixture_dir, sql, output_dir, configs_dir,
     frequency_min, levenshtein_threshold, jaccard_threshold,
     n_items_per_type, item_tags_path, log_level,
 ):
@@ -784,7 +776,6 @@ def main(
         val = "configs/tables.yaml"
     stats = extract(
         source=source,
-        fixture_dir=fixture_dir,
         **{kw: val},
         output_dir=output_dir,
         configs_dir=configs_dir,
