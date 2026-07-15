@@ -1,6 +1,6 @@
 # Tasks: 训练数据生成 (兴业 O2O 三品类 SFT 语料)
 
-**Input**: Design documents from `agent-platform/training-data/specs/`
+**Input**: Design documents from `agent-platform/training-data-synonym/specs/`
 **Prerequisites**: plan.md (required), spec.md (v2.5, required for US), research.md, data-model.md, contracts/{item_tags_v2, sft_corpus_v2, param_op_types_v2, hive_read_v1}.md, quickstart.md
 
 **Tests**: Constitution Principle III requires test-first;test tasks are interleaved before implementation tasks for each user story.
@@ -51,7 +51,7 @@
 
 - **[P]**: Parallelizable(different files, no dependencies on incomplete tasks)
 - **[Story]**: `[US1] / [US2] / [US3]` — only on user-story phase tasks
-- **Path**: Exact file path under `agent-platform/training-data/`
+- **Path**: Exact file path under `agent-platform/training-data-synonym/`
 
 ---
 
@@ -59,13 +59,13 @@
 
 **Purpose**: Project initialization, package skeleton, config + linting.
 
-- [ ] T001 Create Python package skeleton at `agent-platform/training-data/training_data/` with empty `__init__.py` per plan.md Project Structure
-- [ ] T002 Create `agent-platform/training-data/pyproject.toml` declaring Python 3.11+ + deps `pyyaml, jsonschema, tenacity, pytest, hypothesis, ruff`
-- [ ] T003 Create `agent-platform/training-data/requirements.txt` pinning `pyyaml>=6.0`, `jsonschema>=4.18`, `tenacity>=8.2`, `pytest>=7.4`, `pytest-cov`, `hypothesis>=6.82`, `ruff>=0.1`
-- [ ] T004 [P] Configure ruff + black in `agent-platform/training-data/pyproject.toml` (line-length 100, target-version py311)
-- [ ] T005 [P] Create `agent-platform/training-data/conftest.py` with shared fixtures (`tmp_output_dir`, `mock_llm_client`, `mock_hive_reader`)
-- [ ] T006 [P] Create `agent-platform/training-data/tests/__init__.py` + 4 sub-package `__init__.py` (unit / contract / integration / fixtures)
-- [ ] T007 Refresh `agent-platform/training-data/README.md` (8 维 + 3 品类 + Hive 数据源 + 5 轮对话;sync with spec v2.4)
+- [ ] T001 Create Python package skeleton at `agent-platform/training-data-synonym/training_data/` with empty `__init__.py` per plan.md Project Structure
+- [ ] T002 Create `agent-platform/training-data-synonym/pyproject.toml` declaring Python 3.11+ + deps `pyyaml, jsonschema, tenacity, pytest, hypothesis, ruff`
+- [ ] T003 Create `agent-platform/training-data-synonym/requirements.txt` pinning `pyyaml>=6.0`, `jsonschema>=4.18`, `tenacity>=8.2`, `pytest>=7.4`, `pytest-cov`, `hypothesis>=6.82`, `ruff>=0.1`
+- [ ] T004 [P] Configure ruff + black in `agent-platform/training-data-synonym/pyproject.toml` (line-length 100, target-version py311)
+- [ ] T005 [P] Create `agent-platform/training-data-synonym/conftest.py` with shared fixtures (`tmp_output_dir`, `mock_llm_client`, `mock_hive_reader`)
+- [ ] T006 [P] Create `agent-platform/training-data-synonym/tests/__init__.py` + 4 sub-package `__init__.py` (unit / contract / integration / fixtures)
+- [ ] T007 Refresh `agent-platform/training-data-synonym/README.md` (8 维 + 3 品类 + Hive 数据源 + 5 轮对话;sync with spec v2.4)
 - [ ] T008 [P] Add `configs/prompts/enrichment_v1.txt` Stage 1 prompt (per research.md D-010)
 - [ ] T009 [P] Add `configs/prompts/sft_v1.txt` Stage 2 prompt (per research.md D-011)
 - [ ] T010 [P] Add `configs/intent_keywords.yaml` 5 类 intent 关键词模板(per FR-015/016)
@@ -77,21 +77,21 @@
 
 **Purpose**: Core infrastructure shared by ALL user stories. **No US work can begin until this phase is complete.**
 
-- [ ] T012 [P] Implement `TableMeta / ColumnMeta / Role / TagOrigin` dataclasses in `agent-platform/training-data/training_data/data_model.py` (per data-model.md §实体 1 + §实体 5)
-- [ ] T013 [P] Implement `ParamSpec` dataclass + `validate_params()` 7-step validator in `agent-platform/training-data/training_data/param_ops.py` (per data-model.md §实体 6 + contracts/param_op_types_v2.md)
-- [ ] T014 Implement `SqlParser` in `agent-platform/training-data/training_data/sql_parser/parser.py` (DDL → TableMeta list,role inference rules per data-model.md §实体 1)
-- [ ] T015 Define `HiveReadSpec / RawRecord` dataclasses in `agent-platform/training-data/training_data/hive_reader/base.py` (per data-model.md §实体 2,3)
-- [ ] T016 Define `HiveReader` abstract base class + exception types (`ConnectionError / AccessDenied / EmptyPartitionSet / SchemaDriftError / DuplicateItemIdError / SensitiveLeakError`) in `agent-platform/training-data/training_data/hive_reader/base.py`
-- [ ] T017 [P] Implement `MockHiveReader` in `agent-platform/training-data/training_data/hive_reader/mock_reader.py` (per contracts/hive_read_v1.md;reads fixture dir)
-- [ ] T018 Seed mock fixtures in `agent-platform/training-data/tests/fixtures/hive/` (7 tables × 100 rows per research.md D-013): `o2o_new_gut_shop_base_third.jsonl` (50 有 lng/lat + 50 无), `o2o_new_gut_shop_base.jsonl`, `o2o_new_gut_shop_address.jsonl` (80% 覆盖), `o2o_new_gut_coupon_template.jsonl`, `o2o_new_gut_coupon_shop.jsonl` (70 张券绑定), `o2o_new_gut_shop_category_meituan.jsonl`, `o2o_new_gut_shop_category_mapping.jsonl`
-- [ ] T019 Implement structured JSON-line logging in `agent-platform/training-data/training_data/common/logging.py` (per Constitution V;fields: `ts, level, stage, item_id, event, latency_ms, outcome`)
-- [ ] T020 Implement config loader (yaml → dataclass) in `agent-platform/training-data/training_data/common/config.py` (loads `pipeline.yaml` + 3 dict yamls + computes `dict_version` md5)
-- [ ] T021 [P] Define `LLMClient` abstract base + `MockLLMClient` in `agent-platform/training-data/training_data/common/llm_client.py` (per research.md D-012;retry 2x + exponential backoff)
-- [ ] T022 [P] Implement `_format_version` constants module in `agent-platform/training-data/training_data/common/versioning.py` (`item_tags_v2`, `sft_corpus_v2`, `table_meta_v1`, `train_split_v1`, `distribution_report_v1`)
-- [ ] T023 Define common exception hierarchy in `agent-platform/training-data/training_data/common/exceptions.py` (`PipelineError`, `StageError`, `ValidationError`, `ContractError`)
-- [ ] T024 Update `agent-platform/training-data/configs/dim_dictionary.yaml` to 8 维 + add `_meta.version: 2.0` (per spec v2.4)
-- [ ] T025 Add `agent-platform/training-data/configs/consumable_type_map.yaml` (per research.md D-007:drink/food/mixed + default:none + coupon_text_hints)
-- [ ] T026 Add `agent-platform/training-data/configs/pipeline.yaml` 顶层配置 (per spec Configuration Snapshot:`input.hive`, `enrichment`, `sft`, `cleaning`, `distribution`, `split`)
+- [ ] T012 [P] Implement `TableMeta / ColumnMeta / Role / TagOrigin` dataclasses in `agent-platform/training-data-synonym/training_data/data_model.py` (per data-model.md §实体 1 + §实体 5)
+- [ ] T013 [P] Implement `ParamSpec` dataclass + `validate_params()` 7-step validator in `agent-platform/training-data-synonym/training_data/param_ops.py` (per data-model.md §实体 6 + contracts/param_op_types_v2.md)
+- [ ] T014 Implement `SqlParser` in `agent-platform/training-data-synonym/training_data/sql_parser/parser.py` (DDL → TableMeta list,role inference rules per data-model.md §实体 1)
+- [ ] T015 Define `HiveReadSpec / RawRecord` dataclasses in `agent-platform/training-data-synonym/training_data/hive_reader/base.py` (per data-model.md §实体 2,3)
+- [ ] T016 Define `HiveReader` abstract base class + exception types (`ConnectionError / AccessDenied / EmptyPartitionSet / SchemaDriftError / DuplicateItemIdError / SensitiveLeakError`) in `agent-platform/training-data-synonym/training_data/hive_reader/base.py`
+- [ ] T017 [P] Implement `MockHiveReader` in `agent-platform/training-data-synonym/training_data/hive_reader/mock_reader.py` (per contracts/hive_read_v1.md;reads fixture dir)
+- [ ] T018 Seed mock fixtures in `agent-platform/training-data-synonym/tests/fixtures/hive/` (7 tables × 100 rows per research.md D-013): `o2o_new_gut_shop_base_third.jsonl` (50 有 lng/lat + 50 无), `o2o_new_gut_shop_base.jsonl`, `o2o_new_gut_shop_address.jsonl` (80% 覆盖), `o2o_new_gut_coupon_template.jsonl`, `o2o_new_gut_coupon_shop.jsonl` (70 张券绑定), `o2o_new_gut_shop_category_meituan.jsonl`, `o2o_new_gut_shop_category_mapping.jsonl`
+- [ ] T019 Implement structured JSON-line logging in `agent-platform/training-data-synonym/training_data/common/logging.py` (per Constitution V;fields: `ts, level, stage, item_id, event, latency_ms, outcome`)
+- [ ] T020 Implement config loader (yaml → dataclass) in `agent-platform/training-data-synonym/training_data/common/config.py` (loads `pipeline.yaml` + 3 dict yamls + computes `dict_version` md5)
+- [ ] T021 [P] Define `LLMClient` abstract base + `MockLLMClient` in `agent-platform/training-data-synonym/training_data/common/llm_client.py` (per research.md D-012;retry 2x + exponential backoff)
+- [ ] T022 [P] Implement `_format_version` constants module in `agent-platform/training-data-synonym/training_data/common/versioning.py` (`item_tags_v2`, `sft_corpus_v2`, `table_meta_v1`, `train_split_v1`, `distribution_report_v1`)
+- [ ] T023 Define common exception hierarchy in `agent-platform/training-data-synonym/training_data/common/exceptions.py` (`PipelineError`, `StageError`, `ValidationError`, `ContractError`)
+- [ ] T024 Update `agent-platform/training-data-synonym/configs/dim_dictionary.yaml` to 8 维 + add `_meta.version: 2.0` (per spec v2.4)
+- [ ] T025 Add `agent-platform/training-data-synonym/configs/consumable_type_map.yaml` (per research.md D-007:drink/food/mixed + default:none + coupon_text_hints)
+- [ ] T026 Add `agent-platform/training-data-synonym/configs/pipeline.yaml` 顶层配置 (per spec Configuration Snapshot:`input.hive`, `enrichment`, `sft`, `cleaning`, `distribution`, `split`)
 
 **Checkpoint**: Foundation ready — `sql_parser`, `HiveReader` 抽象, mock 实现, dict yaml, LLMClient mock, 异常体系, 日志与配置 全部就绪;Stage 1 / Stage 2 可以并行启动。
 
@@ -105,32 +105,32 @@
 
 ### Tests for User Story 1 ⚠️ Write FIRST, ensure FAIL before implementation
 
-- [ ] T027 [P] [US1] Contract test for `item_tags_v2.jsonl` schema in `agent-platform/training-data/tests/contract/test_item_tags_schema.py` (per contracts/item_tags_v2.md §字段详解 + §`tag_source` 三族枚举)
-- [ ] T028 [P] [US1] Contract test for `HiveReader` interface in `agent-platform/training-data/tests/contract/test_hive_read_spec.py` (per contracts/hive_read_v1.md;8 个测试用例含 sensitive drop / 0 泄露 / namespace isolation)
-- [ ] T029 [P] [US1] Unit test for SQL parser role inference in `agent-platform/training-data/tests/unit/sql_parser/test_parser.py` (覆盖 11 张表 + 边界:未知表 → UNKNOWN)
-- [ ] T030 [P] [US1] Unit test for MockHiveReader in `agent-platform/training-data/tests/unit/hive_reader/test_mock_reader.py` (per contracts/hive_read_v1.md §"行为差异表";敏感列 drop / item_id namespace / geo 抽取 / partition filter)
-- [ ] T031 [P] [US1] Unit test for `distance_geo` in `agent-platform/training-data/tests/unit/enricher/test_distance_geo.py` (per FR-008b;3 品类各自来源 + lng/lat 合法性 5 条规则)
-- [ ] T032 [P] [US1] Unit test for `consumable_mapper` in `agent-platform/training-data/tests/unit/enricher/test_consumable_mapper.py` (per FR-008c;`category → consumable_type` 映射命中率 ≥ 90% + LLM 兜底 + 优惠券文本判定)
-- [ ] T033 [P] [US1] Unit test for `tag_schema` validation in `agent-platform/training-data/tests/unit/enricher/test_tag_schema.py` (`tag == null ⇔ tag_source == missing` 不变式 + 三族枚举白名单)
-- [ ] T034 [P] [US1] Unit test for incremental `state` in `agent-platform/training-data/tests/unit/enricher/test_state.py` (4 元组指纹比对,新分区到达 / 字典升级触发重算)
-- [ ] T035 [P] [US1] Unit test for `llm_enricher` 6 维 LLM 兜底 in `agent-platform/training-data/tests/unit/enricher/test_llm_enricher.py` (降级路径:超时 / JSON 错 / 字典外 → null + failures 写入)
-- [ ] T036 [P] [US1] Integration test for Stage 1 end-to-end in `agent-platform/training-data/tests/integration/test_stage1_end_to_end.py` (300 行 mock fixture → 完整 item_tags.jsonl + SC-002/003 自检)
+- [ ] T027 [P] [US1] Contract test for `item_tags_v2.jsonl` schema in `agent-platform/training-data-synonym/tests/contract/test_item_tags_schema.py` (per contracts/item_tags_v2.md §字段详解 + §`tag_source` 三族枚举)
+- [ ] T028 [P] [US1] Contract test for `HiveReader` interface in `agent-platform/training-data-synonym/tests/contract/test_hive_read_spec.py` (per contracts/hive_read_v1.md;8 个测试用例含 sensitive drop / 0 泄露 / namespace isolation)
+- [ ] T029 [P] [US1] Unit test for SQL parser role inference in `agent-platform/training-data-synonym/tests/unit/sql_parser/test_parser.py` (覆盖 11 张表 + 边界:未知表 → UNKNOWN)
+- [ ] T030 [P] [US1] Unit test for MockHiveReader in `agent-platform/training-data-synonym/tests/unit/hive_reader/test_mock_reader.py` (per contracts/hive_read_v1.md §"行为差异表";敏感列 drop / item_id namespace / geo 抽取 / partition filter)
+- [ ] T031 [P] [US1] Unit test for `distance_geo` in `agent-platform/training-data-synonym/tests/unit/enricher/test_distance_geo.py` (per FR-008b;3 品类各自来源 + lng/lat 合法性 5 条规则)
+- [ ] T032 [P] [US1] Unit test for `consumable_mapper` in `agent-platform/training-data-synonym/tests/unit/enricher/test_consumable_mapper.py` (per FR-008c;`category → consumable_type` 映射命中率 ≥ 90% + LLM 兜底 + 优惠券文本判定)
+- [ ] T033 [P] [US1] Unit test for `tag_schema` validation in `agent-platform/training-data-synonym/tests/unit/enricher/test_tag_schema.py` (`tag == null ⇔ tag_source == missing` 不变式 + 三族枚举白名单)
+- [ ] T034 [P] [US1] Unit test for incremental `state` in `agent-platform/training-data-synonym/tests/unit/enricher/test_state.py` (4 元组指纹比对,新分区到达 / 字典升级触发重算)
+- [ ] T035 [P] [US1] Unit test for `llm_enricher` 6 维 LLM 兜底 in `agent-platform/training-data-synonym/tests/unit/enricher/test_llm_enricher.py` (降级路径:超时 / JSON 错 / 字典外 → null + failures 写入)
+- [ ] T036 [P] [US1] Integration test for Stage 1 end-to-end in `agent-platform/training-data-synonym/tests/integration/test_stage1_end_to_end.py` (300 行 mock fixture → 完整 item_tags.jsonl + SC-002/003 自检)
 
 ### Implementation for User Story 1
 
-- [ ] T037 [P] [US1] Implement `ItemTags / TagSource` dataclasses in `agent-platform/training-data/training_data/enricher/tag_schema.py` (per data-model.md §实体 4,5)
-- [ ] T038 [P] [US1] Implement `consumable_mapper` in `agent-platform/training-data/training_data/enricher/consumable_mapper.py` (per FR-008c;load `consumable_type_map.yaml` + coupon_text_hints)
-- [ ] T039 [P] [US1] Implement `distance_geo` in `agent-platform/training-data/training_data/enricher/distance_geo.py` (per FR-008b;3 品类 lng/lat 抽取 + 合法性 5 条规则 + `tag_source.distance = geo / missing`)
-- [ ] T040 [US1] Implement `llm_enricher` 6 维 LLM 兜底 in `agent-platform/training-data/training_data/enricher/llm_enricher.py` (per FR-005/007;load `enrichment_v1.txt` + 字典子集注入 + 重试 2x + 失败写 failures)
-- [ ] T041 [P] [US1] Implement `state` incremental fingerprint in `agent-platform/training-data/training_data/enricher/state.py` (per FR-006 + research.md D-003;parquet 4 元组 + read-modify-write)
-- [ ] T042 [P] [US1] Implement `failures` writer in `agent-platform/training-data/training_data/enricher/failures.py` (per contracts/item_tags_v2.md §失败样本 schema)
-- [ ] T043 [US1] Implement `writer` for `item_tags_v2.jsonl` in `agent-platform/training-data/training_data/enricher/writer.py` (固定 8 维字段顺序 + `_format_version = item_tags_v2` + raw_record 透传)
-- [ ] T044 [US1] Implement `SparkHiveReader` in `agent-platform/training-data/training_data/hive_reader/spark_reader.py` (per contracts/hive_read_v1.md;生产 PySpark Catalog + 敏感列剔除 + etl_dt filter + SchemaDriftError 处理)
-- [ ] T045 [P] [US1] Implement `PyHiveReader` in `agent-platform/training-data/training_data/hive_reader/pyhive_reader.py` (备选后端,无 Spark 环境)
-- [ ] T046 [US1] Implement `EnrichmentPipeline` orchestrator in `agent-platform/training-data/training_data/enricher/pipeline.py` (编排:tables_meta → HiveReader.read_all_three_core → 增量指纹比对 → 6 维 llm_enricher 并行 + distance_geo + consumable_mapper → writer)
-- [ ] T047 [P] [US1] Implement `tables_meta.json` writer in `agent-platform/training-data/training_data/enricher/tables_meta_writer.py` (per data-model.md §实体 1;overwrite)
-- [ ] T048 [US1] Implement Stage 1 CLI subcommand in `agent-platform/training-data/training_data/cli.py` (`enrich` + `tables-meta` + `--source hive|mock` + `--n-items-per-type` + `--etl-dt-mode` 参数)
-- [ ] T049 [US1] Wire `summary.json` partial in `agent-platform/training-data/training_data/common/summary.py` (Stage 1 字段:items_processed / llm_calls / dict_pass_rate / coverage / sc_pass)
+- [ ] T037 [P] [US1] Implement `ItemTags / TagSource` dataclasses in `agent-platform/training-data-synonym/training_data/enricher/tag_schema.py` (per data-model.md §实体 4,5)
+- [ ] T038 [P] [US1] Implement `consumable_mapper` in `agent-platform/training-data-synonym/training_data/enricher/consumable_mapper.py` (per FR-008c;load `consumable_type_map.yaml` + coupon_text_hints)
+- [ ] T039 [P] [US1] Implement `distance_geo` in `agent-platform/training-data-synonym/training_data/enricher/distance_geo.py` (per FR-008b;3 品类 lng/lat 抽取 + 合法性 5 条规则 + `tag_source.distance = geo / missing`)
+- [ ] T040 [US1] Implement `llm_enricher` 6 维 LLM 兜底 in `agent-platform/training-data-synonym/training_data/enricher/llm_enricher.py` (per FR-005/007;load `enrichment_v1.txt` + 字典子集注入 + 重试 2x + 失败写 failures)
+- [ ] T041 [P] [US1] Implement `state` incremental fingerprint in `agent-platform/training-data-synonym/training_data/enricher/state.py` (per FR-006 + research.md D-003;parquet 4 元组 + read-modify-write)
+- [ ] T042 [P] [US1] Implement `failures` writer in `agent-platform/training-data-synonym/training_data/enricher/failures.py` (per contracts/item_tags_v2.md §失败样本 schema)
+- [ ] T043 [US1] Implement `writer` for `item_tags_v2.jsonl` in `agent-platform/training-data-synonym/training_data/enricher/writer.py` (固定 8 维字段顺序 + `_format_version = item_tags_v2` + raw_record 透传)
+- [ ] T044 [US1] Implement `SparkHiveReader` in `agent-platform/training-data-synonym/training_data/hive_reader/spark_reader.py` (per contracts/hive_read_v1.md;生产 PySpark Catalog + 敏感列剔除 + etl_dt filter + SchemaDriftError 处理)
+- [ ] T045 [P] [US1] Implement `PyHiveReader` in `agent-platform/training-data-synonym/training_data/hive_reader/pyhive_reader.py` (备选后端,无 Spark 环境)
+- [ ] T046 [US1] Implement `EnrichmentPipeline` orchestrator in `agent-platform/training-data-synonym/training_data/enricher/pipeline.py` (编排:tables_meta → HiveReader.read_all_three_core → 增量指纹比对 → 6 维 llm_enricher 并行 + distance_geo + consumable_mapper → writer)
+- [ ] T047 [P] [US1] Implement `tables_meta.json` writer in `agent-platform/training-data-synonym/training_data/enricher/tables_meta_writer.py` (per data-model.md §实体 1;overwrite)
+- [ ] T048 [US1] Implement Stage 1 CLI subcommand in `agent-platform/training-data-synonym/training_data/cli.py` (`enrich` + `tables-meta` + `--source hive|mock` + `--n-items-per-type` + `--etl-dt-mode` 参数)
+- [ ] T049 [US1] Wire `summary.json` partial in `agent-platform/training-data-synonym/training_data/common/summary.py` (Stage 1 字段:items_processed / llm_calls / dict_pass_rate / coverage / sc_pass)
 
 **Checkpoint**: User Story 1 complete — `python -m training_data.cli enrich --source mock` 跑通,SC-001/002/003 全绿。
 
@@ -144,32 +144,32 @@
 
 ### Tests for User Story 2 ⚠️ Write FIRST, ensure FAIL before implementation
 
-- [ ] T050 [P] [US2] Contract test for `sft_corpus_v2.jsonl` schema in `agent-platform/training-data/tests/contract/test_sft_corpus_schema.py` (per contracts/sft_corpus_v2.md §字段详解 + 8 维顺序 + negative_type 不变式)
-- [ ] T051 [P] [US2] Contract test for `param_op_types_v2` in `agent-platform/training-data/tests/contract/test_param_op_types.py` (8 维 × 4 op 映射 + 字典校验 7 步 + v1→v2 兼容降级)
-- [ ] T052 [P] [US2] Unit test for `distance_sampler` in `agent-platform/training-data/tests/unit/sft/test_distance_sampler.py` (per FR-013b;`distance_param_ratio` / 4 桶等权 / `order_by` 5 类 / 双向耦合概率)
-- [ ] T053 [P] [US2] Unit test for `negative_sampler` in `agent-platform/training-data/tests/unit/sft/test_negative_sampler.py` (per FR-013;3 类(reject/pivot/unsatisfiable)+ `negative_ratio=0.10` ±0.02)
-- [ ] T054 [P] [US2] Unit test for `diversity` in `agent-platform/training-data/tests/unit/sft/test_diversity.py` (per FR-014;首句 n-gram 同模板占比 ≤ 20% + 5~8 套句式骨架)
-- [ ] T055 [P] [US2] Unit test for `intent_assigner` in `agent-platform/training-data/tests/unit/sft/test_intent_assigner.py` (per FR-015/016;5 类 intent + 三品类倾向 + 每类占比 ≥ 3%)
-- [ ] T056 [P] [US2] Unit test for `sample_planner` in `agent-platform/training-data/tests/unit/sft/test_sample_planner.py` (per FR-011;单 item N 条样本合并覆盖全部非 null 维 + `forced_coverage` 兜底)
-- [ ] T057 [P] [US2] Unit test for `validator` in `agent-platform/training-data/tests/unit/sft/test_validator.py` (8 维字典校验 + messages 长度 [1,5] + `negative=true` ⇔ `negative_type` 非 null)
-- [ ] T058 [P] [US2] Unit test for `llm_generator` in `agent-platform/training-data/tests/unit/sft/test_llm_generator.py` (ground-truth 注入对齐 + 距离表述 ↔ bucket 反向检测)
-- [ ] T059 [P] [US2] Integration test for Stage 2 end-to-end in `agent-platform/training-data/tests/integration/test_stage2_end_to_end.py` (50 item × 8 sample → SC-004/005/006/007 全绿)
+- [ ] T050 [P] [US2] Contract test for `sft_corpus_v2.jsonl` schema in `agent-platform/training-data-synonym/tests/contract/test_sft_corpus_schema.py` (per contracts/sft_corpus_v2.md §字段详解 + 8 维顺序 + negative_type 不变式)
+- [ ] T051 [P] [US2] Contract test for `param_op_types_v2` in `agent-platform/training-data-synonym/tests/contract/test_param_op_types.py` (8 维 × 4 op 映射 + 字典校验 7 步 + v1→v2 兼容降级)
+- [ ] T052 [P] [US2] Unit test for `distance_sampler` in `agent-platform/training-data-synonym/tests/unit/sft/test_distance_sampler.py` (per FR-013b;`distance_param_ratio` / 4 桶等权 / `order_by` 5 类 / 双向耦合概率)
+- [ ] T053 [P] [US2] Unit test for `negative_sampler` in `agent-platform/training-data-synonym/tests/unit/sft/test_negative_sampler.py` (per FR-013;3 类(reject/pivot/unsatisfiable)+ `negative_ratio=0.10` ±0.02)
+- [ ] T054 [P] [US2] Unit test for `diversity` in `agent-platform/training-data-synonym/tests/unit/sft/test_diversity.py` (per FR-014;首句 n-gram 同模板占比 ≤ 20% + 5~8 套句式骨架)
+- [ ] T055 [P] [US2] Unit test for `intent_assigner` in `agent-platform/training-data-synonym/tests/unit/sft/test_intent_assigner.py` (per FR-015/016;5 类 intent + 三品类倾向 + 每类占比 ≥ 3%)
+- [ ] T056 [P] [US2] Unit test for `sample_planner` in `agent-platform/training-data-synonym/tests/unit/sft/test_sample_planner.py` (per FR-011;单 item N 条样本合并覆盖全部非 null 维 + `forced_coverage` 兜底)
+- [ ] T057 [P] [US2] Unit test for `validator` in `agent-platform/training-data-synonym/tests/unit/sft/test_validator.py` (8 维字典校验 + messages 长度 [1,5] + `negative=true` ⇔ `negative_type` 非 null)
+- [ ] T058 [P] [US2] Unit test for `llm_generator` in `agent-platform/training-data-synonym/tests/unit/sft/test_llm_generator.py` (ground-truth 注入对齐 + 距离表述 ↔ bucket 反向检测)
+- [ ] T059 [P] [US2] Integration test for Stage 2 end-to-end in `agent-platform/training-data-synonym/tests/integration/test_stage2_end_to_end.py` (50 item × 8 sample → SC-004/005/006/007 全绿)
 
 ### Implementation for User Story 2
 
-- [ ] T060 [P] [US2] Implement `SFTSample / MessageTurn / ParamSpec` dataclasses in `agent-platform/training-data/training_data/sft/sample.py` (per data-model.md §实体 6,7,8)
-- [ ] T061 [P] [US2] Implement `distance_sampler` in `agent-platform/training-data/training_data/sft/distance_sampler.py` (per FR-013b;`distance_param_ratio` + 4 桶直采 + `order_by` 5 类 + 双向耦合概率约束)
-- [ ] T062 [P] [US2] Implement `negative_sampler` in `agent-platform/training-data/training_data/sft/negative_sampler.py` (per FR-013;3 类 + `op=not_in` for reject + `order_by=null`)
-- [ ] T063 [P] [US2] Implement `diversity` in `agent-platform/training-data/training_data/sft/diversity.py` (per FR-014;句式模板随机 + n-gram 检测 + `temperature += 0.1` 重试)
-- [ ] T064 [P] [US2] Implement `intent_assigner` in `agent-platform/training-data/training_data/sft/intent_assigner.py` (per FR-015/016;5 类 + item_type 倾向 + 占比下限 + 长尾过采样)
-- [ ] T065 [US2] Implement `sample_planner` in `agent-platform/training-data/training_data/sft/sample_planner.py` (per FR-011;`count_per_item` 默认 8 + 剩余维度跟踪 + `forced_coverage` 兜底追加)
-- [ ] T066 [US2] Implement `validator` in `agent-platform/training-data/training_data/sft/validator.py` (8 维字典校验 + `negative_type` 不变式 + messages 长度 + control char / tab 拒绝)
-- [ ] T067 [US2] Implement `llm_generator` in `agent-platform/training-data/training_data/sft/llm_generator.py` (per research.md D-011;ground-truth 注入 + `sft_v1.txt` prompt + DistanceAlignmentError 触发)
-- [ ] T068 [US2] Implement `sft_failures` writer in `agent-platform/training-data/training_data/sft/failures.py` (per contracts/sft_corpus_v2.md §失败样本 schema;含 `target_params`)
-- [ ] T069 [US2] Implement `writer` for `sft_corpus_v2.jsonl` in `agent-platform/training-data/training_data/sft/writer.py` (固定 8 维 params 顺序 + `_format_version = sft_corpus_v2` + `covered_dims` 累计)
-- [ ] T070 [US2] Implement `SFTPipeline` orchestrator in `agent-platform/training-data/training_data/sft/pipeline.py` (sample_planner → distance_sampler → negative_sampler → diversity → intent_assigner → llm_generator → validator → writer,支持增量 `sft_state.parquet`)
-- [ ] T071 [US2] Implement Stage 2 CLI subcommand in `agent-platform/training-data/training_data/cli.py` (`sft` + `--input` + `--count-per-item` + `--max-message-turns` + `--turn-distribution` + `--negative-ratio` + `--llm-source`)
-- [ ] T072 [US2] Wire `summary.json` Stage 2 fields in `agent-platform/training-data/training_data/common/summary.py` (sft_total / sft_failures / forced_coverage_count / 8 维非 null 比例 / 5 轮分布)
+- [ ] T060 [P] [US2] Implement `SFTSample / MessageTurn / ParamSpec` dataclasses in `agent-platform/training-data-synonym/training_data/sft/sample.py` (per data-model.md §实体 6,7,8)
+- [ ] T061 [P] [US2] Implement `distance_sampler` in `agent-platform/training-data-synonym/training_data/sft/distance_sampler.py` (per FR-013b;`distance_param_ratio` + 4 桶直采 + `order_by` 5 类 + 双向耦合概率约束)
+- [ ] T062 [P] [US2] Implement `negative_sampler` in `agent-platform/training-data-synonym/training_data/sft/negative_sampler.py` (per FR-013;3 类 + `op=not_in` for reject + `order_by=null`)
+- [ ] T063 [P] [US2] Implement `diversity` in `agent-platform/training-data-synonym/training_data/sft/diversity.py` (per FR-014;句式模板随机 + n-gram 检测 + `temperature += 0.1` 重试)
+- [ ] T064 [P] [US2] Implement `intent_assigner` in `agent-platform/training-data-synonym/training_data/sft/intent_assigner.py` (per FR-015/016;5 类 + item_type 倾向 + 占比下限 + 长尾过采样)
+- [ ] T065 [US2] Implement `sample_planner` in `agent-platform/training-data-synonym/training_data/sft/sample_planner.py` (per FR-011;`count_per_item` 默认 8 + 剩余维度跟踪 + `forced_coverage` 兜底追加)
+- [ ] T066 [US2] Implement `validator` in `agent-platform/training-data-synonym/training_data/sft/validator.py` (8 维字典校验 + `negative_type` 不变式 + messages 长度 + control char / tab 拒绝)
+- [ ] T067 [US2] Implement `llm_generator` in `agent-platform/training-data-synonym/training_data/sft/llm_generator.py` (per research.md D-011;ground-truth 注入 + `sft_v1.txt` prompt + DistanceAlignmentError 触发)
+- [ ] T068 [US2] Implement `sft_failures` writer in `agent-platform/training-data-synonym/training_data/sft/failures.py` (per contracts/sft_corpus_v2.md §失败样本 schema;含 `target_params`)
+- [ ] T069 [US2] Implement `writer` for `sft_corpus_v2.jsonl` in `agent-platform/training-data-synonym/training_data/sft/writer.py` (固定 8 维 params 顺序 + `_format_version = sft_corpus_v2` + `covered_dims` 累计)
+- [ ] T070 [US2] Implement `SFTPipeline` orchestrator in `agent-platform/training-data-synonym/training_data/sft/pipeline.py` (sample_planner → distance_sampler → negative_sampler → diversity → intent_assigner → llm_generator → validator → writer,支持增量 `sft_state.parquet`)
+- [ ] T071 [US2] Implement Stage 2 CLI subcommand in `agent-platform/training-data-synonym/training_data/cli.py` (`sft` + `--input` + `--count-per-item` + `--max-message-turns` + `--turn-distribution` + `--negative-ratio` + `--llm-source`)
+- [ ] T072 [US2] Wire `summary.json` Stage 2 fields in `agent-platform/training-data-synonym/training_data/common/summary.py` (sft_total / sft_failures / forced_coverage_count / 8 维非 null 比例 / 5 轮分布)
 
 **Checkpoint**: User Story 2 complete — `python -m training_data.cli sft` 跑通,SC-004/005/006/007 全绿;与 US1 端到端串联可输出 8 维 ground-truth 训练样本。
 
@@ -183,26 +183,26 @@
 
 ### Tests for User Story 3 ⚠️ Write FIRST, ensure FAIL before implementation
 
-- [ ] T073 [P] [US3] Contract test for split integrity in `agent-platform/training-data/tests/contract/test_split_integrity.py` (0 泄露自检 + 比例 ±2% + `_format_version=train_split_v1`)
-- [ ] T074 [P] [US3] Unit test for `cleaner` 7 类规则 in `agent-platform/training-data/tests/unit/postprocess/test_cleaner.py` (per FR-017;text_hash 去重 / 消息过短 / 模板降频 / params 全 null / 控制字符 / 字段白名单 / 轮次异常)
-- [ ] T075 [P] [US3] Unit test for `distribution` 8 项指标 in `agent-platform/training-data/tests/unit/postprocess/test_distribution.py` (per FR-018;intent / params / op / negative / 轮次 / 消息长度 / 字典覆盖率 / params 组合多样性)
-- [ ] T076 [P] [US3] Unit test for `balancer` in `agent-platform/training-data/tests/unit/postprocess/test_balancer.py` (per FR-018;长尾 <3% 过采样 2x + 不平衡度 >5x 报警)
-- [ ] T077 [P] [US3] Unit test for `splitter` in `agent-platform/training-data/tests/unit/postprocess/test_splitter.py` (per FR-019;`item_id` md5 hash 划分 + 0 泄露校验)
-- [ ] T078 [P] [US3] Integration test for full pipeline end-to-end in `agent-platform/training-data/tests/integration/test_pipeline_end_to_end.py` (per quickstart.md 场景 5;50 item × 8 sample,SC-001~SC-011 全绿)
+- [ ] T073 [P] [US3] Contract test for split integrity in `agent-platform/training-data-synonym/tests/contract/test_split_integrity.py` (0 泄露自检 + 比例 ±2% + `_format_version=train_split_v1`)
+- [ ] T074 [P] [US3] Unit test for `cleaner` 7 类规则 in `agent-platform/training-data-synonym/tests/unit/postprocess/test_cleaner.py` (per FR-017;text_hash 去重 / 消息过短 / 模板降频 / params 全 null / 控制字符 / 字段白名单 / 轮次异常)
+- [ ] T075 [P] [US3] Unit test for `distribution` 8 项指标 in `agent-platform/training-data-synonym/tests/unit/postprocess/test_distribution.py` (per FR-018;intent / params / op / negative / 轮次 / 消息长度 / 字典覆盖率 / params 组合多样性)
+- [ ] T076 [P] [US3] Unit test for `balancer` in `agent-platform/training-data-synonym/tests/unit/postprocess/test_balancer.py` (per FR-018;长尾 <3% 过采样 2x + 不平衡度 >5x 报警)
+- [ ] T077 [P] [US3] Unit test for `splitter` in `agent-platform/training-data-synonym/tests/unit/postprocess/test_splitter.py` (per FR-019;`item_id` md5 hash 划分 + 0 泄露校验)
+- [ ] T078 [P] [US3] Integration test for full pipeline end-to-end in `agent-platform/training-data-synonym/tests/integration/test_pipeline_end_to_end.py` (per quickstart.md 场景 5;50 item × 8 sample,SC-001~SC-011 全绿)
 
 ### Implementation for User Story 3
 
-- [ ] T079 [P] [US3] Implement `DistributionReport` dataclass + analyzer in `agent-platform/training-data/training_data/postprocess/distribution.py` (per data-model.md §实体 9 + FR-018;8 项指标 + consumable_type 子指标 + `warnings`)
-- [ ] T080 [P] [US3] Implement `cleaner` 7 类规则 in `agent-platform/training-data/training_data/postprocess/cleaner.py` (per FR-017 + contracts/sft_corpus_v2.md §清洗规则;text_hash md5 / 短消息阈值 / n-gram 降频 / 全 null 删 / control char 删 / 白名单 / 轮次异常)
-- [ ] T081 [P] [US3] Implement `balancer` 自动过采样 in `agent-platform/training-data/training_data/postprocess/balancer.py` (per FR-018;长尾类 2x LLM 改写 + 不平衡度 >5x 报警 + `balancing_failures.jsonl`)
-- [ ] T082 [US3] Implement `splitter` in `agent-platform/training-data/training_data/postprocess/splitter.py` (per FR-019;`item_id` md5 hash 80/10/10 + 0 泄露校验 + 可配比例)
-- [ ] T083 [US3] Implement `summary.json` writer in `agent-platform/training-data/training_data/common/summary.py` (聚合两阶段 + 清洗 + 划分;含 SC 自检结果)
-- [ ] T084 [P] [US3] Implement `cleaning_failures.jsonl` writer in `agent-platform/training-data/training_data/postprocess/cleaner.py` (per FR-017)
-- [ ] T085 [P] [US3] Implement `cold_start_items.jsonl` writer in `agent-platform/training-data/training_data/enricher/cold_start.py` (Stage 1 后 8 维全 null 的 item 列表)
-- [ ] T086 [US3] Implement `verify` CLI subcommand in `agent-platform/training-data/training_data/cli.py` (读 summary.json + 各阶段产物,自动对照 SC-001~SC-011,输出 human/json)
-- [ ] T087 [US3] Implement `split` CLI subcommand in `agent-platform/training-data/training_data/cli.py` (`--input` + `--output-dir` + `--train/val/test-ratio`)
-- [ ] T088 [US3] Implement `all` CLI subcommand in `agent-platform/training-data/training_data/cli.py` (编排 enrich → sft → split → verify,产出 `summary.json` + `verify_report.json`)
-- [ ] T089 [US3] Wire 80/10/10 三文件 `_format_version=train_split_v1` + 0 泄露 assertion in `agent-platform/training-data/training_data/postprocess/splitter.py`
+- [ ] T079 [P] [US3] Implement `DistributionReport` dataclass + analyzer in `agent-platform/training-data-synonym/training_data/postprocess/distribution.py` (per data-model.md §实体 9 + FR-018;8 项指标 + consumable_type 子指标 + `warnings`)
+- [ ] T080 [P] [US3] Implement `cleaner` 7 类规则 in `agent-platform/training-data-synonym/training_data/postprocess/cleaner.py` (per FR-017 + contracts/sft_corpus_v2.md §清洗规则;text_hash md5 / 短消息阈值 / n-gram 降频 / 全 null 删 / control char 删 / 白名单 / 轮次异常)
+- [ ] T081 [P] [US3] Implement `balancer` 自动过采样 in `agent-platform/training-data-synonym/training_data/postprocess/balancer.py` (per FR-018;长尾类 2x LLM 改写 + 不平衡度 >5x 报警 + `balancing_failures.jsonl`)
+- [ ] T082 [US3] Implement `splitter` in `agent-platform/training-data-synonym/training_data/postprocess/splitter.py` (per FR-019;`item_id` md5 hash 80/10/10 + 0 泄露校验 + 可配比例)
+- [ ] T083 [US3] Implement `summary.json` writer in `agent-platform/training-data-synonym/training_data/common/summary.py` (聚合两阶段 + 清洗 + 划分;含 SC 自检结果)
+- [ ] T084 [P] [US3] Implement `cleaning_failures.jsonl` writer in `agent-platform/training-data-synonym/training_data/postprocess/cleaner.py` (per FR-017)
+- [ ] T085 [P] [US3] Implement `cold_start_items.jsonl` writer in `agent-platform/training-data-synonym/training_data/enricher/cold_start.py` (Stage 1 后 8 维全 null 的 item 列表)
+- [ ] T086 [US3] Implement `verify` CLI subcommand in `agent-platform/training-data-synonym/training_data/cli.py` (读 summary.json + 各阶段产物,自动对照 SC-001~SC-011,输出 human/json)
+- [ ] T087 [US3] Implement `split` CLI subcommand in `agent-platform/training-data-synonym/training_data/cli.py` (`--input` + `--output-dir` + `--train/val/test-ratio`)
+- [ ] T088 [US3] Implement `all` CLI subcommand in `agent-platform/training-data-synonym/training_data/cli.py` (编排 enrich → sft → split → verify,产出 `summary.json` + `verify_report.json`)
+- [ ] T089 [US3] Wire 80/10/10 三文件 `_format_version=train_split_v1` + 0 泄露 assertion in `agent-platform/training-data-synonym/training_data/postprocess/splitter.py`
 
 **Checkpoint**: User Story 3 complete — `python -m training_data.cli all` 跑通;SC-001~SC-011 verify 全绿。
 
@@ -212,16 +212,16 @@
 
 **Purpose**: 跨 US 共享的收尾工作。
 
-- [ ] T090 [P] Update `agent-platform/training-data/docs/ALIGNMENT_cib_o2o.md` 加入 `consumable_type` 段落 + Hive 数据源段落 + `distance` 解耦说明
-- [ ] T091 [P] Add `agent-platform/training-data/scripts/migrate_v1_to_v2.py` v1→v2 迁移工具(per data-model.md §兼容性;`item_tags_v1 → item_tags_v2` + `sft_corpus_v1 → sft_corpus_v2`)
-- [ ] T092 [P] Add `agent-platform/training-data/scripts/demo.sh` 一键 demo 脚本(spawn Stage 1 → Stage 2 → split,~1 min,per quickstart.md)
+- [ ] T090 [P] Update `agent-platform/training-data-synonym/docs/ALIGNMENT_cib_o2o.md` 加入 `consumable_type` 段落 + Hive 数据源段落 + `distance` 解耦说明
+- [ ] T091 [P] Add `agent-platform/training-data-synonym/scripts/migrate_v1_to_v2.py` v1→v2 迁移工具(per data-model.md §兼容性;`item_tags_v1 → item_tags_v2` + `sft_corpus_v1 → sft_corpus_v2`)
+- [ ] T092 [P] Add `agent-platform/training-data-synonym/scripts/demo.sh` 一键 demo 脚本(spawn Stage 1 → Stage 2 → split,~1 min,per quickstart.md)
 - [ ] T093 Add CI workflow `.github/workflows/test.yml`(per Constitution Principle III Test-First;`pytest` + `ruff check` + `black --check`,CI 100% 脱机 mock)
-- [ ] T094 [P] Add performance benchmark script `agent-platform/training-data/scripts/benchmark.py`(SC-010 端到端 1 万 item × 8 sample < 90 分钟 验证)
-- [ ] T095 [P] Add `agent-platform/training-data/tests/unit/security/test_sensitive_drop.py`(审计 `HiveReader.read()` 出口必无 sensitive 列;跨 US 守门)
-- [ ] T096 [P] Add `agent-platform/training-data/tests/integration/test_real_spark_hive.py`(可选 / 标 `@pytest.mark.spark` 跳过;生产环境跑通)
-- [ ] T097 [P] Add structured logging configuration `agent-platform/training-data/configs/logging.yaml`(per research.md D-012;每 LLM 调用一行 json:item_id / latency_ms / token_in/out / outcome)
-- [ ] T098 [P] Add `agent-platform/training-data/CHANGELOG.md` v2.4 spec v2.4 / plan v2.4 实施变更记录
-- [ ] T099 [P] Run quickstart.md 5 验证场景 in `agent-platform/training-data/scripts/verify_quickstart.sh` (per quickstart.md;tables-meta / enrich / sft / split / all+verify)
+- [ ] T094 [P] Add performance benchmark script `agent-platform/training-data-synonym/scripts/benchmark.py`(SC-010 端到端 1 万 item × 8 sample < 90 分钟 验证)
+- [ ] T095 [P] Add `agent-platform/training-data-synonym/tests/unit/security/test_sensitive_drop.py`(审计 `HiveReader.read()` 出口必无 sensitive 列;跨 US 守门)
+- [ ] T096 [P] Add `agent-platform/training-data-synonym/tests/integration/test_real_spark_hive.py`(可选 / 标 `@pytest.mark.spark` 跳过;生产环境跑通)
+- [ ] T097 [P] Add structured logging configuration `agent-platform/training-data-synonym/configs/logging.yaml`(per research.md D-012;每 LLM 调用一行 json:item_id / latency_ms / token_in/out / outcome)
+- [ ] T098 [P] Add `agent-platform/training-data-synonym/CHANGELOG.md` v2.4 spec v2.4 / plan v2.4 实施变更记录
+- [ ] T099 [P] Run quickstart.md 5 验证场景 in `agent-platform/training-data-synonym/scripts/verify_quickstart.sh` (per quickstart.md;tables-meta / enrich / sft / split / all+verify)
 - [ ] T100 Run `/speckit-analyze` post-implementation to detect drift across spec / plan / code
 
 ---
@@ -234,7 +234,7 @@
 
 ### Tests for User Story 4 ⚠️ Write FIRST, ensure FAIL before implementation
 
-- [x] T101 [P] [US4] Unit test for `clean_brand` / `clean_category` (parens / suffix stripping) in `agent-platform/training-data/tests/unit/test_extract_dictionary.py`
+- [x] T101 [P] [US4] Unit test for `clean_brand` / `clean_category` (parens / suffix stripping) in `agent-platform/training-data-synonym/tests/unit/test_extract_dictionary.py`
 - [x] T102 [P] [US4] Unit test for `levenshtein` + `jaccard_chars` (incl. max_dist early-exit) in `tests/unit/test_extract_dictionary.py`
 - [x] T103 [P] [US4] Unit test for `normalize_brands` (merge close variants / freq sort / cross-script NOT merge) in `tests/unit/test_extract_dictionary.py`
 - [x] T104 [P] [US4] Unit test for `normalize_categories` in `tests/unit/test_extract_dictionary.py`
@@ -244,9 +244,9 @@
 
 ### Implementation for User Story 4
 
-- [x] T108 [P] [US4] Implement `clean_brand` / `clean_category` / `levenshtein` / `jaccard_chars` / `RawRow` / `aggregate_raw` / `normalize_brands` / `normalize_categories` / `diff_brands` / `diff_categories` in `agent-platform/training-data/training_data/cli/extract_dictionary.py`
+- [x] T108 [P] [US4] Implement `clean_brand` / `clean_category` / `levenshtein` / `jaccard_chars` / `RawRow` / `aggregate_raw` / `normalize_brands` / `normalize_categories` / `diff_brands` / `diff_categories` in `agent-platform/training-data-synonym/training_data/cli/extract_dictionary.py`
 - [x] T109 [US4] Implement `extract()` orchestrator + `click` CLI entry in `training_data/cli/extract_dictionary.py`
-- [x] T110 [US4] Wire `extract-dictionary` subcommand into `agent-platform/training-data/training_data/cli/__init__.py`
+- [x] T110 [US4] Wire `extract-dictionary` subcommand into `agent-platform/training-data-synonym/training_data/cli/__init__.py`
 
 **Checkpoint**: User Story 4 complete — `extract-dictionary` 离线工具就绪,**不污染** Stage 1/2 主流水线。
 

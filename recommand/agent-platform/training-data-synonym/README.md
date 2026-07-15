@@ -1,237 +1,195 @@
-# 训练数据生成 (兴业 O2O 三品类 SFT 语料) — v2.5.2
+# 训练数据生成管线 — v2.5.2
 
-**目录**: `agent-platform/training-data/`
 **业务对齐**: 兴业银行信用卡 O2O 推荐系统
-**数据源**: Hive / CSV / Spark,通过 `configs/tables.yaml` 声明表结构和 LLM 推断字段
-**Spec**: v2.5.2 — **配置驱动 LLM 推断** / **表可任意扩展** / OpenAI 兼容 HTTP 客户端
+**数据源**: CSV / Hive,通过 `configs/tables.yaml` 声明表结构和 LLM 推断字段
+**模型**: OpenAI 兼容 API（DeepSeek 等）
 
 ## 3-Stage Pipeline
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│ Stage 1: extract-tags  全量标签抽取                       │
-│   LLM 推断 category/taste/cuisine/occasion/consumable_type│
-│   avg_prc 从原始列桶化,表字段透传                         │
-│   → dim_dictionary_snapshot.yaml (约束集)                 │
-│   → item_profile.jsonl (扁平格式)                         │
-└───────────────────────┬──────────────────────────────────┘
-                        ↓
-┌───────────────────────┴──────────────────────────────────┐
-│ Stage 2: enrich       实际标注数据                        │
-│   字典约束 + reject 可观测                                │
-│   → item_tags.jsonl + item_profile.jsonl                 │
-└───────────────────────┬──────────────────────────────────┘
-                        ↓
-┌───────────────────────┴──────────────────────────────────┐
-│ Stage 3: sft          合成 SFT 数据                       │
-│   → sft_corpus.jsonl + train/val/test.jsonl              │
-└──────────────────────────────────────────────────────────┘
+Stage 1: extract-tags     LLM 自由推断 → item_profile.jsonl + dim_dictionary_snapshot.yaml
+Stage 2: enrich           字典约束标注 → item_tags.jsonl + item_profile.jsonl
+Stage 3: sft              SFT 语料合成 → train.jsonl(80%) + test.jsonl(20%)
+
+generate-synonyms         同义词词表 → ext_dict.txt + ext_synonyms.txt
+```
+
+## 快速开始
+
+```bash
+cd agent-platform/training-data-synonym
+export OPENAI_API_KEY="sk-xxx"
+
+# Stage 1: 标签抽取
+python -m training_data.cli extract-tags \
+    --source csv --output-dir output/stage1 \
+    --frequency-min 1 --provider openai_compat
+
+# Stage 2: 字典约束标注
+python -m training_data.cli enrich \
+    --source csv --output-dir output/stage2 \
+    --dict-snapshot output/stage1/dim_dictionary_snapshot.yaml \
+    --provider openai_compat
+
+# Stage 3: SFT 语料合成
+python -m training_data.cli sft \
+    --input output/stage2/item_profile.jsonl \
+    --output-dir output/sft \
+    --count-per-item 8 --provider openai_compat
+
+# 同义词生成
+python -m training_data.cli generate-synonyms \
+    --dict-snapshot output/stage1/dim_dictionary_snapshot.yaml \
+    --provider openai_compat
+
+# 测试用（限制条数）
+head -10 output/stage2/item_profile.jsonl > /tmp/test.jsonl
+python -m training_data.cli sft --input /tmp/test.jsonl --max-items 10 --provider openai_compat
 ```
 
 ## 配置文件
 
-### `configs/tables.yaml` — 表声明 + LLM 推断配置
+### `configs/tables.yaml` — 表声明 + LLM 推断维度
 
 ```yaml
 _meta:
-  llm_inference:                          # 声明哪些字段由 LLM 推断
-    - { field: category, desc: 商业品类,如咖啡、快餐, multiple: false }
-    - { field: taste,    desc: 口味标签,如甜、辣,     multiple: true  }
-    - { field: cuisine,  desc: 菜系,如川菜、日料,     multiple: false }
-    - { field: occasion, desc: 消费场景,如早餐、聚会,  multiple: false }
-    - { field: consumable_type, desc: 吃或喝,food/drink/mixed, multiple: false }
-
-  field_contract:    # 每种表类型要求提供的列(加载时校验)
-    meituan_shop: { required: [id, name, category, price, lng, lat] }
+  llm_inference:
+    - field: category
+      desc: 品类或菜系,如火锅、咖啡、川菜、日料
+      multiple: false
+    - field: brand
+      desc: 品牌,如星巴克、麦当劳
+      multiple: false
+    - field: taste
+      desc: 口味标签,如甜、辣、咸鲜
+      multiple: true
+    - field: occasion
+      desc: 消费场景,如约会、聚餐
+      multiple: true
+    - field: consumable_type
+      desc: 吃或喝,food/drink/mixed
+      multiple: false
 
 tables:
-  - db: recommand_workspace
-    name: o2o_new_gut_shop_base_third
+  - name: o2o_new_gut_shop_base_third
     role: meituan_shop
+    item_id: str_id
     columns:
-      - { name: str_id,  type: VARCHAR, role: id }
-      - { name: str_nm,  type: VARCHAR, role: name }
-      - { name: cat_nm,  type: VARCHAR, role: category }
-      - { name: avg_prc, type: VARCHAR, role: price }
-      - { name: lng,     type: VARCHAR, role: lng }
-      - { name: lat,     type: VARCHAR, role: lat }
-    derived_fields:
-      avg_prc: avg_prc                  # 非 LLM: 从原始列桶化
-    sensitive: [crt_psn_id, updt_psn_id]
+      - { name: str_id,  type: VARCHAR }
+      - { name: str_nm,  type: VARCHAR, llm_input: true }
+      - { name: cat_nm,  type: VARCHAR }
+      - { name: avg_prc, type: VARCHAR }
 ```
-
-**扩展新表**:在 `tables` 下加一条,配 `columns` + `derived_fields`,`_meta.field_contract` 加一行 `role` 即可。**新增推断维度**:在 `_meta.llm_inference` 加一个 `{field, desc, multiple}` 条目,prompt 自动生成。
 
 ### `configs/pipeline.yaml` — 运行参数
 
 ```yaml
 training_data:
   input:
-    source: hive               # hive | mock | csv
-    item_types: [meituan_shop] # 只跑哪种表
-    sample_n_per_type:         # 留空=全量,填数字=采样
+    source: csv
+    csv_dir: ../../knowledge_database
+    item_types: [meituan_shop]
   enrichment:
+    batch_size: 50
+    concurrency: 4
     llm:
       provider: openai_compat
-      model: deepseek-chat
+      model: deepseek-v4-flash
       base_url: https://api.deepseek.com/v1
-      api_key_env: LLM_API_KEY
-      timeout_seconds: 60
-      verify_ssl: true
-      headers:                 # 自定义 header(可选)
-        X-Workspace-Id: "ws-001"
-    concurrency: 4             # LLM 并发数
+      timeout_seconds: 30
+      max_tokens: 1024
+  sft:
+    tag_keys: [brand, category, taste, occasion, consumable_type, avg_prc, distance]
+    concurrency: 4
+    count_per_item: 8
+    max_message_turns: 9
+    llm:
+      provider: openai_compat
+      model: deepseek-v4-flash
+      base_url: https://api.deepseek.com/v1
+      timeout_seconds: 30
+      max_tokens: 2048
 ```
+
+**API Key 通过环境变量**: `export OPENAI_API_KEY="sk-xxx"`，不再写入配置文件避免 git 泄露。
 
 ## 全部 CLI 子命令
 
 ```bash
-cd /opt/recommand/recommand/agent-platform/training-data
-PYTHONPATH=.
+# Stage 1
+python -m training_data.cli extract-tags --source csv --output-dir output/stage1 --provider openai_compat
 
-# Stage 1: 全量标签抽取(LLM 推断 + 品牌频次统计)
-python3 -m training_data.cli extract-tags \
-    --tables-config configs/tables.yaml \
-    --source hive --output-dir output/stage1 --frequency-min 1
-# → dim_dictionary_snapshot.yaml + brands_diff.yaml
+# Stage 2
+python -m training_data.cli enrich --source csv --output-dir output/stage2 \
+    --dict-snapshot output/stage1/dim_dictionary_snapshot.yaml --provider openai_compat
 
-# Stage 2: 实际标注(字典约束)
-python3 -m training_data.cli enrich \
-    --tables-config configs/tables.yaml --source hive \
-    --dict-snapshot output/stage1/dim_dictionary_snapshot.yaml \
-    --output-dir output/stage2
-# → item_tags.jsonl + item_profile.jsonl
+# Stage 3 (SFT)
+python -m training_data.cli sft --input output/stage2/item_profile.jsonl \
+    --output-dir output/sft --count-per-item 8 --max-items 1000 --provider openai_compat
 
-# Stage 3: 合成 SFT 数据
-python3 -m training_data.cli sft \
-    --input output/stage2/item_tags.jsonl --output-dir output/stage3
+# 同义词
+python -m training_data.cli generate-synonyms \
+    --dict-snapshot output/stage1/dim_dictionary_snapshot.yaml --provider openai_compat
 
-# CSV 模式
-python3 -m training_data.cli enrich \
-    --tables-config configs/tables.yaml --source csv \
-    --csv-dir /data/csv --csv-delimiter ',' --output-dir output/
+# 分割 + 校验
+python -m training_data.cli split --input output/sft/train.jsonl --output-dir output/split
+python -m training_data.cli verify --output-dir output/stage2
 
-# Jupyter (注入已有 SparkSession)
-from training_data.enricher.pipeline import EnrichmentPipeline
-from training_data.hive_reader.spark_reader import SparkHiveReader
-pipeline = EnrichmentPipeline(
-    config=cfg, tables_config_path="configs/tables.yaml",
-    hive_reader=SparkHiveReader(spark_session=spark),  # 用 Jupyter 的 spark
-    llm_client=llm, output_dir="output/stage2",
-    constrain_to_dict=False,  # Stage 1 发散模式
-)
+# 一键全流程
+python -m training_data.cli all --source csv --output-dir output/e2e --provider openai_compat
 ```
 
-## 不依赖(默认 mock 模式)
+## SFT 语料分布
 
-- ✅ 0 网络(MockLLMClient 本地)
-- ✅ 0 Spark(纯 Python)
-- ✅ 0 embedding
+| scenario_type | 占比 | 说明 |
+|---------------|------|------|
+| single_turn | 15% | 单轮简单查询 |
+| single_multi_cond | 20% | 单轮多条件查询 |
+| add_condition | 25% | 多轮新增条件 |
+| modify_condition | 10% | 多轮修改条件 |
+| remove_condition | 5% | 多轮删除条件 |
+| negative_condition | 10% | 否定/排除 |
+| reference_resolution | 5% | 指代消解 |
+| intent_switch | 5% | 意图切换 |
+| vague_query | 5% | 无意图模糊查询 |
 
-可选依赖:
-- `pip install -e .[llm]` — httpx,启用真实 LLM
-- `pip install -e .[spark]` — PySpark,启 Hive 直读
+输出: `train.jsonl`(80%) + `test.jsonl`(20%)，按 item_id md5 无泄漏分割。
 
-## 一键 Demo
+## 同义词输出
 
-```bash
-bash scripts/demo.sh
-# 默认 10 门店/类型 × 4 样本/商品,30s 内跑通 enrich → sft → split → verify
-# set -uo pipefail(no -e)— mock LLM SC-003 不达标也跑完整链路
-# 产物见 /tmp/training_data_demo/
+| 文件 | 格式 | 用途 |
+|------|------|------|
+| `ext_synonyms.txt` | `凉茶, herbal tea, 草药茶` | ES synonym_graph |
+| `ext_dict.txt` | 一行一词 | IK 分词词典 |
+
+## 目录结构
+
+```
+agent-platform/training-data-synonym/
+├── training_data/              # Python 包
+│   ├── enricher/               # Stage 1/2: LLM 标签推断
+│   ├── sft/                    # Stage 3: SFT 语料合成
+│   ├── cli/                    # 命令行入口
+│   ├── common/                 # LLM client / config / logging
+│   ├── hive_reader/            # CSV/Hive 数据读取
+│   └── data_model.py           # 数据模型
+├── synonym-dictionary/         # 同义词生成
+│   ├── synonym_builder/        # LLM 驱动同义词生成器
+│   └── configs/prompts/        # 同义词 prompt
+├── configs/
+│   ├── tables.yaml             # 表声明 + LLM 推断配置
+│   ├── pipeline.yaml           # 运行参数
+│   └── prompts/                # Prompt 模板
+└── output/                     # 产出目录
+    ├── stage1/                 # dim_dictionary_snapshot.yaml
+    ├── stage2/                 # item_tags.jsonl + item_profile.jsonl
+    └── sft/                    # train.jsonl + test.jsonl
 ```
 
-## 3-Stage Pipeline
+## 不依赖
 
-```
-┌──────────────────────────────────────────────────────────┐
-│ Stage 1: extract-tags  全量标签抽取                       │
-│   从 Hive 抽取 brand/category 原始值 + 人工字典全量      │
-│   → dim_dictionary_snapshot.yaml (8 维约束集)            │
-└───────────────────────┬──────────────────────────────────┘
-                        ↓
-┌───────────────────────┴──────────────────────────────────┐
-│ Stage 2: enrich       实际标注数据                        │
-│   LLM 推断 8 维标签,字典约束,含 name_inference fallback  │
-│   → item_tags.jsonl (300 行) + dim_dictionary_snapshot   │
-└───────────────────────┬──────────────────────────────────┘
-                        ↓
-┌───────────────────────┴──────────────────────────────────┐
-│ Stage 3: sft          合成 SFT 数据                       │
-│   标签 → 多轮对话语料,字典校验 + 7 类清洗 + 80/10/10     │
-│   → sft_corpus.jsonl + train/val/test.jsonl              │
-└──────────────────────────────────────────────────────────┘
-```
+- 0 网络（默认 mock 模式）
+- 0 Spark（纯 Python CSV 读取）
+- 0 embedding 模型
 
-## 全部 CLI 子命令
-
-```bash
-# Stage 1 — 全量标签抽取(brand/category 从 Hive 抽取)
-python -m training_data.cli extract-tags \
-  --tables-config configs/tables.yaml \
-  --source hive --hive-metastore-uri thrift://localhost:9083 \
-  --output-dir ./dict_candidates --frequency-min 10
-# Review ./dict_candidates/brands_diff.yaml → 人工 promote 进 configs/*.yaml
-
-# Stage 2 — 实际标注数据(8 维标签,字典约束 LLM)
-python -m training_data.cli enrich \
-  --tables-config configs/tables.yaml \
-  --source hive --hive-metastore-uri thrift://localhost:9083 \
-  --output-dir ./out --n-items-per-type 100
-# 自动导出 ./out/dim_dictionary_snapshot.yaml (Stage2 → Stage3 桥梁)
-
-# Stage 2 with Stage 1 snapshot constraint:
-python -m training_data.cli enrich \
-  --tables-config configs/tables.yaml --source hive \
-  --dict-snapshot ./dict_candidates/dim_dictionary_snapshot.yaml \
-  --output-dir ./out
-
-# Stage 3 — 合成 SFT 数据(标签 → 多轮对话语料)
-python -m training_data.cli sft \
-  --input ./out/item_tags.jsonl \
-  --output-dir ./out --count-per-item 8 --max-message-turns 5
-
-# split — SFT 语料 → 80/10/10 split(SC-010 no-leak)
-python -m training_data.cli split \
-  --input ./out/sft_corpus.jsonl \
-  --output-dir ./out
-
-# verify — SC self-check
-python -m training_data.cli verify --output-dir ./out
-
-# 一键 3-Stage
-python -m training_data.cli all --source hive \
-  --tables-config configs/tables.yaml \
-  --hive-metastore-uri thrift://localhost:9083 \
-  --output-dir ./e2e --n-items-per-type 50 --count-per-item 4
-```
-
-## 8 维 dim param schema
-
-| 字段 | op | dict_values | 示例 |
-|------|----|------|------|
-| `category` | in | 12 | `{"op": "in", "values": ["咖啡"]}` |
-| `consumable_type` | eq | 4(food/drink/mixed/none) | `{"op": "eq", "value": "drink"}` |
-| `merchant` | in | 82 | `{"op": "in", "values": ["星巴克"]}` |
-| `avg_prc` | in | 5 | `{"op": "in", "values": ["30-50"]}` |
-| `distance` | in | 4 | `{"op": "in", "values": ["500-1000"]}` |
-| `age` | in | 5 | `{"op": "in", "values": ["25-35"]}` |
-| `occasion` | in | 13 | `{"op": "in", "values": ["下午茶"]}` |
-| `taste` | contains / not_in | 14 | `{"op": "contains", "values": ["甜", "冰"]}` |
-
-## 不依赖(默认 mock 模式)
-
-- ✅ 0 网络(全部本地启发式)
-- ✅ 0 LLM API(mock-llm 100% 本地)
-- ✅ 0 Spark(纯 Python)
-- ✅ 0 embedding 模型
-
-可选依赖:
-- `pip install -e .[llm]` — 装 httpx,启用 `--provider openai_compat` 真实 LLM 路径
-- `pip install -e .[spark]` / `[hive]` — 生产 Hive 读取器(Spark / PyHive,留作 Phase 3 stub)
-
-## 相关
-
-- 同义词词表:`../synonym-dictionary/`
-- 离线数据管线:`../data-pipeline/`
-- v2.5 spec(在 `specs/` 子目录下):`spec.md` / `plan.md` / `data-model.md` / `quickstart.md`
+可选: `pip install httpx` 启用真实 LLM

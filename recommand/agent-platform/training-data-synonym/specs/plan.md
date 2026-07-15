@@ -2,7 +2,7 @@
 
 **Branch**: `training-data` | **Date**: 2026-06-26 | **Spec**: [./spec.md](./spec.md) (v2.5.1)
 
-**Input**: Feature specification from `agent-platform/training-data/specs/spec.md`
+**Input**: Feature specification from `agent-platform/training-data-synonym/specs/spec.md`
 
 **Status**: Phase 1 设计完成 + Stage 0/1/2/3 + split/verify + 真实 LLM + name_inference 已交付。
    3-Stage Pipeline: `extract-tags` → `enrich` → `sft`。
@@ -13,7 +13,7 @@
 > - Stage 3 (`sft`): 合成 SFT 数据
 
 > **v2.5.1 变更(2026-06-26)**:
-> - **字段契约**(`_meta.field_contract`):每种 role 声明 required 字段,loader 校验缺失抛
+> - **字段契约**(`_meta.llm_inference`):每种 role 声明 required 字段,loader 校验缺失抛
 >   `TablesConfigError`。修复"上游 SQL 缺字段代码静默失败"的隐患。
 > - **禁隐式 JOIN**:`extract_geo` 移除 `address_row` 参数;自拓展门店的 `Lng`/`Lat`
 >   由上游 SQL JOIN 或 fixture pre-join 提供。
@@ -37,13 +37,14 @@
 
 ## Summary
 
-为 LP Agent 的 **提参模型** 微调生成 SFT 语料,流水线三阶段(Stage 0 离线 / Stage 1 在线 / Stage 2 在线):
+为 LP Agent 的 **提参模型** 微调生成 SFT 语料, 流水线三阶段 + 同义词生成:
 
-- **Stage 0(US4,离线 ops)**:`extract-dictionary` CLI 从 Hive 抽取品牌/分类候选 → Levenshtein + Jaccard 双阈值聚类 → 频次过滤 → 输出 `dict_candidates/` 候选文件供人工 review 后 promote 进权威 yaml。
-- **Stage 1(US1,在线)**:从 Hive 读取三类商品原始单据 → 补齐 **8 维商业属性标签**(`category / consumable_type / merchant / avg_prc / distance / age / occasion / taste`)→ 产出 `item_tags.jsonl`。其中 `distance` 仅做 lng/lat 透传(不进 LLM),`consumable_type` 由 `category` 字典映射(不进 LLM),其余 6 维走"源列优先 → LLM 兜底"。
-- **Stage 2(US2,在线)**:基于 Stage 1 输出生成最多 5 轮对话 + ground-truth 8 维 `params` + `intent` + `order_by`。`params.distance` / `order_by` 字典直采(与 lng/lat 完全解耦),其余 7 维由 item 标签驱动,LLM 负责自然语言对齐。后接清洗 → 分布统计 → 80/10/10 划分。
+- **Stage 1 (extract-tags)**: LLM 自由推断标签 → 频次统计 → `dim_dictionary_snapshot.yaml` + `item_profile.jsonl`。
+- **Stage 2 (enrich)**: 字典约束标注, 从 Stage 1 snapshot 约束 LLM 输出 → `item_tags.jsonl` + `item_profile.jsonl`。
+- **Stage 3 (sft)**: Item-driven SFT 语料合成, LLM 从商品数据直接生成对话 + 结构化 params → `train.jsonl`(80%) + `test.jsonl`(20%)。
+- **generate-synonyms**: 基于 dim_dictionary_snapshot 生成同义词 → `ext_dict.txt` + `ext_synonyms.txt`。
 
-技术路径:**Python 库 + CLI 入口**,LLM 走 mock(开发/CI)或 LP Agent 主 spec 的"大模型平台托管 API"(生产);Hive 走读侧 spark/pyhive 适配器,可在 CI 中 `--source=mock`。
+标签维度由 `configs/tables.yaml` 的 `_meta.llm_inference` 和 `configs/pipeline.yaml` 的 `tag_keys` 配置驱动,无硬编码。SFT 对话由 `scenario_sampler` 控制分布,支持 9 种场景类型。API Key 通过环境变量 `OPENAI_API_KEY` 传入。
 
 ---
 
@@ -68,7 +69,7 @@
 
 - pytest(单元 + 集成);所有外部依赖(Hive / LLM)替换为 mock,CI 100% 脱机。
 - 关键集成测试:
-  - `test_pipeline_end_to_end.py`:50 item × 8 sample → 验证 8 维字典合法、覆盖率、清洗留存、划分无泄露。
+  - `test_pipeline_end_to_end.py`:50 item × 8 sample → 验证 多维度字典合法、覆盖率、清洗留存、划分无泄露。
   - `test_distance_geo_passthrough.py`:三品类 shop_lng/lat 抽取 + `tag_source.distance` 标记(SC-002, FR-008b)。
   - `test_consumable_type_mapping.py`:`category → consumable_type` 映射命中率(FR-008c, SC-003)。
   - `test_distance_sampling.py`:SFT `params.distance` 与 `order_by` 字典采样耦合规则(FR-013b)。
@@ -80,7 +81,7 @@
 
 **Project Type**:
 
-- **Library + CLI**(对齐 Constitution Principles I / II)。本工程是 `agent-platform/training-data/` 子目录内的独立 Python 包,**不**改 `agent-platform/data-pipeline/`,**不**改 LP Agent envelope。
+- **Library + CLI**(对齐 Constitution Principles I / II)。本工程是 `agent-platform/training-data-synonym/` 子目录内的独立 Python 包,**不**改 `agent-platform/data-pipeline/`,**不**改 LP Agent envelope。
 
 **Performance Goals**:
 
@@ -101,7 +102,7 @@
 
 - item 总量:demo 100 item × 3 类 ≈ 300 item;全量 1w~10w SKU(沿用 LP Agent 主 spec 假设)。
 - 单样本对话 1~5 轮(FR-010),默认 8 条/商品(可配 5~12)。
-- 8 维 × 4 op(`eq / in / contains / not_in`) × 4 distance 桶 × 5 intent。
+- 多维度 × 4 op(`eq / in / contains / not_in`) × 4 distance 桶 × 5 intent。
 - 负样本 10% ± 0.02,3 种类型(`reject / pivot / unsatisfiable`)。
 
 ---
@@ -112,7 +113,7 @@
 
 ### I. Library-First ✅
 
-- `agent-platform/training-data/` 是独立 Python 包,**不**反向依赖 `data-pipeline/`。
+- `agent-platform/training-data-synonym/` 是独立 Python 包,**不**反向依赖 `data-pipeline/`。
 - 子模块边界:`sql_parser` / `hive_reader` / `enricher` / `distance_geo` / `consumable_mapper` / `sft_generator` / `distance_sampler` / `cleaner` / `distribution_analyzer` / `splitter` / `writer`,每个均有明确单一职责。
 - 与上游(Hive / 字典 yaml / LLM)接耦合点:抽象接口 + mock 实现,可独立测试。
 
@@ -132,7 +133,7 @@
   - FR-004/005/007 → `test_enricher.py`(6 维 LLM 兜底路径 + 失败降级)。
   - FR-008b → `test_distance_geo.py`(3 品类 lng/lat 抽取)。
   - FR-008c → `test_consumable_mapper.py`(`category → consumable_type` 命中率 + LLM 兜底)。
-  - FR-009/010/011/012 → `test_sft_generator.py`(8 维 ground-truth + 覆盖率 + 顺序)。
+  - FR-009/010/011/012 → `test_sft_generator.py`(多维度 ground-truth + 覆盖率 + 顺序)。
   - FR-013/013b/014/015/016 → `test_negative_sampler.py` / `test_distance_sampler.py` / `test_diversity.py` / `test_intent_distribution.py`。
   - FR-017/018/019 → `test_cleaner.py` / `test_distribution.py` / `test_splitter.py`。
   - 端到端:`test_pipeline_end_to_end.py`(50 item × 8 sample,覆盖所有 SC)。
@@ -146,7 +147,7 @@
 
 ### V. Observability, Versioning & Simplicity ✅
 
-- **Observability**:`summary.json` 汇报每阶段输入/输出条数 / LLM 调用次数 / 字典命中率 / 8 维覆盖率 / SC 通过情况;结构化日志(每个 LLM 调用一行 JSON,含 `item_id / latency_ms / token_in/out / outcome`)。
+- **Observability**:`summary.json` 汇报每阶段输入/输出条数 / LLM 调用次数 / 字典命中率 / 多维度覆盖率 / SC 通过情况;结构化日志(每个 LLM 调用一行 JSON,含 `item_id / latency_ms / token_in/out / outcome`)。
 - **Versioning**:输出三类产物均带 `_format_version` 字段(`item_tags_v2` / `sft_corpus_v2` / `train_split_v1`);字典文件带 `_meta.version`,变更触发 Stage 1 增量重算。本次 spec v2.4 对应 `item_tags_v2` + `sft_corpus_v2`(若已有 v1 直接 superseded)。
 - **Simplicity**:不引入 embedding、不引入向量库、不引入新的中间件;复用 `agent-platform/data-pipeline` 的 LLMClient 抽象与配置加载;字典 / 映射全部 yaml 外部化,字典变更不改代码。
 
@@ -159,7 +160,7 @@
 ### Documentation (this feature)
 
 ```text
-agent-platform/training-data/specs/
+agent-platform/training-data-synonym/specs/
 ├── spec.md                            # 已有(v2.4)
 ├── plan.md                            # 本文件(/speckit-plan 输出)
 ├── research.md                        # Phase 0 输出
@@ -175,26 +176,26 @@ agent-platform/training-data/specs/
 └── tasks.md                           # Phase 2 输出(/speckit-tasks 生成)
 ```
 
-### Source Code (project root: `agent-platform/training-data/`)
+### Source Code (project root: `agent-platform/training-data-synonym/`)
 
 ```text
-agent-platform/training-data/
+agent-platform/training-data-synonym/
 ├── README.md                          # 已有
 ├── docs/
 │   └── ALIGNMENT_cib_o2o.md           # 已有
 ├── configs/                           # 字典与映射
-│   ├── dim_dictionary.yaml            # 8 维候选值(原 7 维 + consumable_type)
+│   ├── dim_dictionary.yaml            # 多维度候选值(原 7 维 + consumable_type)
 │   ├── consumable_type_map.yaml       # 新增 — category → food/drink/mixed/none
 │   ├── brand_dictionary.yaml          # 已有
 │   ├── intent_keywords.yaml           # 5 类 intent 模板词(新增,FR-015 用)
 │   ├── prompts/
 │   │   ├── enrichment_v1.txt          # Stage 1 LLM prompt(6 维兜底 + consumable_type 兜底)
-│   │   └── sft_v1.txt                 # Stage 2 LLM prompt(8 维 + 5 轮对话 + 负样本注入)
+│   │   └── sft_v1.txt                 # Stage 2 LLM prompt(多维度 + 5 轮对话 + 负样本注入)
 │   └── pipeline.yaml                  # 顶层运行配置(对齐 spec.md Configuration Snapshot)
 ├── training_data/             # Python 包(库源码)
 │   ├── __init__.py
 │   ├── cli/                           # CLI 子包(Constitution Principle II)
-│   │   ├── __init__.py                # 主入口 + tables-meta / enrich / sft / split / verify / all / extract-dictionary
+│   │   ├── __init__.py                # 主入口 + tables-meta / enrich / sft / split / verify / all / extract-tags
 │   │   ├── __main__.py                # `python -m training_data.cli` 入口
 │   │   └── extract_dictionary.py      # US4 Stage 0 离线工具(SQL 抽取 + 规范化 + 频次 + diff)
 │   ├── sql_parser/
@@ -209,7 +210,7 @@ agent-platform/training-data/
 │   ├── enricher/                      # Stage 1
 │   │   ├── __init__.py
 │   │   ├── pipeline.py                # EnrichmentPipeline(批量编排 + 增量比对)
-│   │   ├── tag_schema.py              # 8 维 ParamSpec + tag_source 枚举 + 校验
+│   │   ├── tag_schema.py              # 多维度 ParamSpec + tag_source 枚举 + 校验
 │   │   ├── distance_geo.py            # FR-008b — lng/lat 透传抽取
 │   │   ├── consumable_mapper.py       # FR-008c — category → consumable_type 映射 + LLM 兜底
 │   │   ├── llm_enricher.py            # FR-005/007 — 6 维 LLM 兜底
@@ -225,14 +226,14 @@ agent-platform/training-data/
 │   │   ├── diversity.py               # FR-014 — 句式多样性
 │   │   ├── intent_assigner.py         # FR-015/016 — 5 类 intent + 三品类倾向
 │   │   ├── llm_generator.py           # LLM 多轮对话生成(对齐 ground-truth)
-│   │   ├── validator.py               # 8 维字典校验 + 5 轮上限
+│   │   ├── validator.py               # 多维度字典校验 + 5 轮上限
 │   │   └── writer.py                  # `sft_corpus_v2.jsonl` 写出
 │   ├── postprocess/                   # 清洗 / 分布 / 划分
 │   │   ├── __init__.py
 │   │   ├── cleaner.py                 # FR-017 — 7 类清洗
 │   │   ├── distribution.py            # FR-018 — 8 项分布指标
 │   │   ├── balancer.py                # FR-018 — 长尾过采样
-│   │   ├── splitter.py                # FR-019 — 80/10/10 hash 划分
+│   │   ├── splitter.py                # FR-019 — 80/20 train/test hash 划分
 │   │   └── summary.py                 # FR-021 — summary.json
 │   └── common/
 │       ├── __init__.py
@@ -297,7 +298,7 @@ agent-platform/training-data/
 **Structure Decision**:
 
 - **库 + CLI + 配置 + 测试**(Constitution Principle I/II 双满足)。
-- 路径根:`agent-platform/training-data/`(已存在,本批扩展)。
+- 路径根:`agent-platform/training-data-synonym/`(已存在,本批扩展)。
 - 既有 `scripts/*.py` 保留为兼容薄壳;实际逻辑迁入 `training_data/` 包,以满足 Library-First(Principle I)。
 - `data-pipeline/`、`synonym-dictionary/`、`local-promo-agent/`、`main-agent/` **全部不动**。
 
@@ -314,7 +315,7 @@ agent-platform/training-data/
 3. **`consumable_type_map.yaml` 初始候选完整性**(D-007):覆盖 `dim_dictionary.category` 全部 12 个候选值 + 兜底分支。
 4. **券文本 `consumable_type` 关键词词表**(D-008):FR-008c.5 优惠券文本判定的关键词种子集 + 与品类的优先级。
 5. **`MockHiveReader` fixture 规模与代表性**(D-009):每张表 100 行 × 3 品类应该覆盖哪些边界(冷启动 / 多门店券 / 缺 lng/lat 等)。
-6. **LLM prompt 模板设计**(D-010 / D-011):Stage 1(6 维兜底)与 Stage 2(8 维 + 5 轮对话 + 负样本注入)各自的 prompt 骨架与 few-shot 数量。
+6. **LLM prompt 模板设计**(D-010 / D-011):Stage 1(6 维兜底)与 Stage 2(多维度 + 5 轮对话 + 负样本注入)各自的 prompt 骨架与 few-shot 数量。
 7. **structured output 与 retry 策略**(D-012):LLM JSON 输出失败时的重试 / 解析 / 字典校验降级链。
 
 ### Decisions(已收敛)— 在 research.md 详述
@@ -335,7 +336,7 @@ agent-platform/training-data/
 | D-012 | LLM 失败策略 | 重试 N 次 / 降级 null / 直接退出 | **重试 2 次后写 failures + 跳过**(FR-007, FR-022) |
 | D-013 | mock Hive 实现 | 内联 fixture / fixture 目录 | **fixture 目录**(`tests/fixtures/hive/`) |
 | D-014 | 离散 LLM 录像 | 不录 / 录全部 / 录关键 case | **录关键 case**(`tests/fixtures/llm/mock_responses.jsonl`) |
-| D-015 | 字典扩量策略(US4 Stage 0)| 手工 yaml / SQL 抽取 / 第三方 ETL | **SQL 抽取 + 双阈值聚类**(`extract-dictionary` 离线 CLI) |
+| D-015 | 字典扩量策略(US4 Stage 0)| 手工 yaml / SQL 抽取 / 第三方 ETL | **SQL 抽取 + 双阈值聚类**(`extract-tags` 离线 CLI) |
 | D-016 | 品牌聚类指标 | 单一 Levenshtein / Levenshtein + Jaccard / 嵌入相似度 | **Levenshtein + char 2-gram Jaccard 双阈值** |
 | D-017 | 跨脚本品牌处理 | 强制合并 / 强制分开 / 自适应 | **强制分开**(CJK vs Latin 不合并,避免误判) |
 | D-018 | 离线 vs 在线治理 | 字典扩量走 Stage 1 / 字典扩量独立 CLI | **独立 CLI**,产物落到候选区,人工 promote |
@@ -349,7 +350,7 @@ agent-platform/training-data/
 | 数据模型 | [`./data-model.md`](./data-model.md) | 9 个实体 dataclass / JSON schema 总览 |
 | 契约 — Stage 1 输出 | [`./contracts/item_tags_v2.md`](./contracts/item_tags_v2.md) | `item_tags_v2.jsonl` 行级 schema + tag_source 枚举三族 |
 | 契约 — Stage 2 输出 | [`./contracts/sft_corpus_v2.md`](./contracts/sft_corpus_v2.md) | `sft_corpus_v2.jsonl` 行级 schema + `covered_dims` / `forced_coverage` 字段 |
-| 契约 — Param `op` | [`./contracts/param_op_types_v2.md`](./contracts/param_op_types_v2.md) | 8 维 ↔ 4 op 映射 + 字典校验流程 |
+| 契约 — Param `op` | [`./contracts/param_op_types_v2.md`](./contracts/param_op_types_v2.md) | 多维度 ↔ 4 op 映射 + 字典校验流程 |
 | 契约 — Hive 读 | [`./contracts/hive_read_v1.md`](./contracts/hive_read_v1.md) | `HiveReader` 接口 + `HiveReadSpec` + mock 行为 |
 | 快速验证 | [`./quickstart.md`](./quickstart.md) | 端到端 demo + SC 自检脚本 |
 
@@ -360,7 +361,7 @@ agent-platform/training-data/
 | Principle | 状态 | 理由 |
 |-----------|------|------|
 | I. Library-First | ✅ | `training_data/` 是独立包,所有依赖单向,子模块边界清晰 |
-| II. CLI Interface | ✅ | 顶层 `cli/__init__.py` + 7 个子命令(`tables-meta / enrich / sft / split / verify / all / extract-dictionary`)+ `--format human|json` |
+| II. CLI Interface | ✅ | 顶层 `cli/__init__.py` + 7 个子命令(`tables-meta / enrich / sft / split / verify / all / extract-tags`)+ `--format human|json` |
 | III. Test-First | ✅ | 4 类测试目录(unit / contract / integration / fixtures);tasks.md 必须先红后绿 |
 | IV. Integration Testing | ✅ | 4 张契约 + 3 个 integration scenarios 全覆盖 |
 | V. Observability, Versioning, Simplicity | ✅ | `_format_version` / `summary.json` / 结构化日志;无 embedding / 无中间件 |
@@ -383,7 +384,7 @@ agent-platform/training-data/
 
 1. **Phase 2 — `/speckit-tasks`**:基于 spec v2.5 + 本 plan + 4 张契约,按 US1 / US2 / US3 切分任务,**每个 FR 至少 1 个契约测试 + 1 个实现任务**,先红后绿;预计任务数 ~110(US1 ~30 / US2 ~30 / US3 ~10 / US4 ~10 / 通用 ~10 / Polish ~10)。
 2. **Phase 3 — `/speckit-implement`**:按 tasks.md 依赖序执行,每个 US 完成后跑 `verify` 子命令做 SC 自检。
-3. **同步刷新**:`README.md` 表格(7 维 → 8 维)、`docs/ALIGNMENT_cib_o2o.md`(consumable_type)、`configs/dim_dictionary.yaml`(增 `consumable_type` 段)、`cli/extract_dictionary.py`(US4 离线工具)。
+3. **同步刷新**:`README.md` 表格(7 维 → 多维度)、`docs/ALIGNMENT_cib_o2o.md`(consumable_type)、`configs/dim_dictionary.yaml`(增 `consumable_type` 段)、`cli/extract_dictionary.py`(US4 离线工具)。
 
 ---
 
@@ -392,5 +393,5 @@ agent-platform/training-data/
 | Version | Date | Notes |
 |---------|------|-------|
 | v1 | 2026-06-14 | 初版:输入为 `item_features_ai.jsonl`(依赖 001-data-pipeline-enhancement),7 维口味标签,对话 1~4 轮。 |
-| v2.4 | 2026-06-22 | 重写对齐 spec v2.4:Hive 直接读、三品类源表、8 维(含 `consumable_type`)、5 轮对话上限、`distance` 透传 + SFT 字典直采、FR-008b/c/013b 三个新 FR;子包结构与测试目录全部刷新。 |
-| **v2.5** | 2026-06-23 | 新增 US4 字典扩量离线 CLI `extract-dictionary`(Stage 0):新增 D-015/D-016/D-017/D-018 决策;Project Structure 增 `cli/extract_dictionary.py`;与 Stage 1/2 主流水线解耦,产物落到 `dict_candidates/` 候选区。 |
+| v2.4 | 2026-06-22 | 重写对齐 spec v2.4:Hive 直接读、三品类源表、多维度(含 `consumable_type`)、5 轮对话上限、`distance` 透传 + SFT 字典直采、FR-008b/c/013b 三个新 FR;子包结构与测试目录全部刷新。 |
+| **v2.5** | 2026-06-23 | 新增 US4 字典扩量离线 CLI `extract-tags`(Stage 0):新增 D-015/D-016/D-017/D-018 决策;Project Structure 增 `cli/extract_dictionary.py`;与 Stage 1/2 主流水线解耦,产物落到 `dict_candidates/` 候选区。 |

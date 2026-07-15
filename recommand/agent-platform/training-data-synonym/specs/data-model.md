@@ -8,7 +8,7 @@
 
 ## 概述
 
-本工程(Stage 1 标签补全 + Stage 2 SFT 语料生成)涉及 **9 个核心实体**:
+本工程(Stage 1 标签补全 + Stage 2 SFT 语料生成)涉及 **12 个核心实体**:
 
 | # | 实体 | Python dataclass | JSON 形态 | 来源/去向 |
 |---|------|----------------|-----------|----------|
@@ -16,13 +16,13 @@
 | 2 | `HiveReadSpec` | `HiveReadSpec` | CLI args + config 节 | 运行时配置 |
 | 3 | `RawRecord` | `RawRecord` | `item_tags.jsonl.raw_record` | Hive 行 → Stage 1 入口 |
 | 4 | `ItemTags` | `ItemTags` | `item_tags.jsonl` 行 | **Stage 1 主输出** |
-| 5 | `TagSource` | `TagSource` | `item_tags.jsonl.tag_source` | 8 维每维来源 |
+| 5 | `TagSource` | `TagSource` | `item_tags.jsonl.tag_source` | 维度每维来源 |
 | 6 | `ParamSpec` | `ParamSpec` | `ItemTags.params[k]` / `SFTSample.params[k]` | 内嵌 |
 | 7 | `SFTSample` | `SFTSample` | `sft_corpus_v2.jsonl` 行 | **Stage 2 主输出** |
 | 8 | `MessageTurn` | `MessageTurn` | `SFTSample.messages[]` | 内嵌 |
 | 9 | `DistributionReport` | `DistributionReport` | `distribution_report.json` | 清洗后统计 |
 
-下游消费:`ItemTags` → `SFTSample` → 训练管线(`train.jsonl / val.jsonl / test.jsonl`)。
+下游消费:`ItemTags` → `SFTSample` → 训练管线(`train.jsonl /  / test.jsonl`)。
 
 > **v2.5.2 变更(2026-06-27)**: 3-Stage Pipeline。Stage 1 (extract-tags)→snapshot→Stage 2 (enrich)→item_tags→Stage 3 (sft)→sft_corpus。Snapshot YAML 作为 Stage 1→Stage 2→Stage 3 的字典约束桥梁。
 >
@@ -50,8 +50,8 @@
 > - 实体 1 的输入从 `tabale_structer.sql` DDL 解析改为 `configs/tables.yaml` 显式声明。
 >   加载器:`training_data.common.tables_config.load_tables_config(path) → list[TableMeta]`。
 >   SQL 解析路径(`sql_parser.parser.parse_sql`)保留为 deprecated,新代码不再调用。
-> - `EnrichmentPipeline` / `extract-dictionary` 同时接受 `--tables-config`(新)和 `--sql`(legacy)两个 flag。
-> - `dim_dictionary.yaml` 中 merchant 取值从 19 扩展到 82;occasion 13;taste 14(新增 凉/微辣/通勤)。
+> - `EnrichmentPipeline` / `extract-tags` 同时接受 `--tables-config`(新)和 `--sql`(legacy)两个 flag。
+> - `dim_dictionary.yaml` 中 brand 取值从 19 扩展到 82;occasion 13;taste 14(新增 凉/微辣/通勤)。
 > - 新增可观测性字段:`EnrichmentSummary.dict_rejected_count`、`LLMEnricher.rejection_count`、
 >   `ConsumableMapper.rejection_count`;字典 reject 时写 `EnrichmentFailure(error="dict_rejection")`。
 
@@ -217,13 +217,13 @@ class RawRecord:
 | `item_id` | `str` | string | ✅ | 同 `RawRecord.item_id` |
 | `item_type` | `Role` | string | ✅ | `meituan_shop / self_shop / coupon` |
 | `raw_record` | `Dict[str, Any]` | object | ✅ | 原始列子集(含 `shop_lng / shop_lat` 若可得) |
-| `tags` | `Dict[str, Optional[str \| List[str]]]` | object | ✅ | **8 维标签值**;`distance` 始终 `null`;其他 7 维可 null |
-| `tag_source` | `TagSource` | object | ✅ | 8 维每维来源标记 |
+| `tags` | `Dict[str, Optional[str \| List[str]]]` | object | ✅ | **维度标签值**;`distance` 始终 `null`;其他 7 维可 null |
+| `tag_source` | `TagSource` | object | ✅ | 维度每维来源标记 |
 | `enriched_at` | `datetime` | string(ISO8601) | ✅ | LLM 调用完成时间(UTC) |
 | `llm_model` | `str` | string | ✅ | 用的 LLM 模型 ID |
 | `_format_version` | `str` | string | ✅ | 固定 `"item_tags_v2"` |
 
-**`tags` 字段顺序(固定)**:`category, consumable_type, merchant, avg_prc, distance, age, occasion, taste`(8 维)。
+**`tags` 字段顺序(固定)**:`category, consumable_type, brand, avg_prc, distance, age, occasion, taste`(维度)。
 
 **dataclass 草图**:
 
@@ -233,7 +233,7 @@ class ItemTags:
     item_id: str
     item_type: Role
     raw_record: Dict[str, Any]
-    tags: Dict[str, Optional[Any]]           # 8 维,缺补 None
+    tags: Dict[str, Optional[Any]]           # 维度,缺补 None
     tag_source: "TagSource"
     enriched_at: datetime = field(default_factory=lambda: datetime.utcnow())
     llm_model: str = ""
@@ -258,7 +258,7 @@ class ItemTags:
   "tags": {
     "category": "咖啡",
     "consumable_type": "drink",
-    "merchant": "星巴克",
+    "brand": "星巴克",
     "avg_prc": "30-50",
     "distance": null,
     "age": "25-35",
@@ -268,7 +268,7 @@ class ItemTags:
   "tag_source": {
     "category": "raw",
     "consumable_type": "derived",
-    "merchant": "raw",
+    "brand": "raw",
     "avg_prc": "raw",
     "distance": "geo",
     "age": "ai",
@@ -283,13 +283,13 @@ class ItemTags:
 
 ---
 
-## 实体 5:`TagSource`(8 维来源标记)
+## 实体 5:`TagSource`(维度来源标记)
 
 **三族枚举语义**:
 
 | 维 | 取值集 | 永不取 |
 |----|--------|--------|
-| `category` / `merchant` / `avg_prc` / `age` / `occasion` / `taste` | `raw / ai / missing` | — |
+| `category` / `brand` / `avg_prc` / `age` / `occasion` / `taste` | `raw / ai / missing` | — |
 | `distance` | `geo / missing` | `ai` |
 | `consumable_type` | `derived / ai / missing` | — |
 
@@ -315,7 +315,7 @@ class TagOrigin(str, Enum):
 class TagSource:
     category: TagOrigin
     consumable_type: TagOrigin
-    merchant: TagOrigin
+    brand: TagOrigin
     avg_prc: TagOrigin
     distance: TagOrigin          # 仅 GEO / MISSING
     age: TagOrigin
@@ -336,7 +336,7 @@ class TagSource:
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `op` | `str` | ✅ | 候选:`eq / in / contains / not_in`(本批实现);`gt / lt / between`(预留,本批字典校验拒) |
+| `op` | `str` | ✅ | 候选:`contains / not_contains / in / not_in / gt / gte / lt / lte / between`(本批实现);`gt / lt / between`(预留,本批字典校验拒) |
 | `values` | `str \| List[str]` | ✅ | 类型跟 `op` 对应,详见 `contracts/param_op_types_v2.md` |
 
 **dataclass 草图**:
@@ -354,7 +354,7 @@ class ParamSpec:
 |-----|--------|------------|
 | `category` | `in` | `array<string>` |
 | `consumable_type` | `eq` | `string`(单值 ∈ {food, drink, mixed, none}) |
-| `merchant` | `in` | `array<string>` |
+| `brand` | `in` | `array<string>` |
 | `avg_prc` | `in` | `array<string>`(桶 ID) |
 | `distance` | `in` / `not_in` | `array<string>`(桶 ID) |
 | `age` | `in` | `array<string>` |
@@ -363,9 +363,9 @@ class ParamSpec:
 
 **校验步骤**(7 步,任一失败 → DictValidation):
 
-1. 字段名白名单(8 维);多出 → `unexpected field: <name>`。
+1. 字段名白名单(维度);多出 → `unexpected field: <name>`。
 2. 缺失字段 → null 补齐(非 error)。
-3. op 白名单(`eq / in / contains / not_in`);`gt/lt/between` 拒。
+3. op 白名单(`contains / not_contains / in / not_in / gt / gte / lt / lte / between`);`gt/lt/between` 拒。
 4. op 适用维度:`consumable_type` 仅 `eq`,`taste` 仅 `contains/not_in`,等等。
 5. values 类型跟 op 对应。
 6. values 字典校验(每项必须在 `dim_dictionary.yaml` 候选集合内)。
@@ -381,7 +381,7 @@ class ParamSpec:
 | `item_type` | `Role` | string | ✅ | |
 | `intent` | `str` | string | ✅ | `search_item / use_coupon / pay / view_order / browse` |
 | `messages` | `List[MessageTurn]` | array | ✅ | 长度 1~5,首条 `role=user`,末条不限 |
-| `params` | `Dict[str, Optional[ParamSpec]]` | object | ✅ | **8 维**,缺失补 None,顺序固定 |
+| `params` | `Dict[str, Optional[ParamSpec]]` | object | ✅ | **维度**,缺失补 None,顺序固定 |
 | `order_by` | `Optional[str]` | string\|null | ✅ | `distance / price / rating / time / null` |
 | `negative` | `bool` | boolean | ✅ | `true` = 负样本 |
 | `negative_type` | `Optional[str]` | string\|null | ✅ | `null` / `reject` / `pivot` / `unsatisfiable` |
@@ -426,7 +426,7 @@ class SFTSample:
   "params": {
     "category":         {"op": "in", "values": ["咖啡"]},
     "consumable_type":  {"op": "eq", "values": "drink"},
-    "merchant":         null,
+    "brand":         null,
     "avg_prc":          null,
     "distance":         {"op": "in", "values": ["0-500"]},
     "age":              null,
@@ -491,7 +491,7 @@ class MessageTurn:
 | 指标 | 目标 | 不达标动作 |
 |------|------|------------|
 | 5 类 intent 比例 | 每类 ≥ 3% | 报警 + 过采样 |
-| 8 维 params 非 null 比例 | 每维 ≥ 5% | 报警 + 过采样 |
+| 维度 params 非 null 比例 | 每维 ≥ 5% | 报警 + 过采样 |
 | 4 op 比例 | `not_in` ≥ 3% | 报警 + 过采样 |
 | 负样本比例 | `negative_ratio` ±0.02 | 报警 |
 | 对话轮次分布 | 1/2/3/4/5 = 10/20/35/25/10% ±5% | 报警 |
@@ -523,7 +523,7 @@ class MessageTurn:
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | `item_id` | `str` | |
-| `tags_md5` | `str` | 8 维 tags 字段级 md5 |
+| `tags_md5` | `str` | 维度 tags 字段级 md5 |
 | `enrichment_format_version` | `str` | `item_tags_v2` 等 |
 | `sft_format_version` | `str` | `sft_corpus_v2` |
 | `generated_at` | `datetime` | |
@@ -582,21 +582,21 @@ Hive / Mock fixtures ─┴─→ HiveReader(spark | pyhive | mock)
                             │
                             ▼
                  SFTPipeline:
-                   ├─ sample_planner (8 维覆盖率规划 + 强制补样)
+                   ├─ sample_planner (维度覆盖率规划 + 强制补样)
                    ├─ distance_sampler (distance / order_by 字典直采 + 耦合)
                    ├─ negative_sampler (3 类负样本)
                    ├─ intent_assigner (5 类 intent + 三品类倾向)
                    ├─ diversity (句式模板随机)
-                   └─ llm_generator + validator (8 维 ground-truth 注入)
+                   └─ llm_generator + validator (维度 ground-truth 注入)
                             │
                             ▼
                      sft_corpus_v2.jsonl
                             │
                             ▼
-                 Cleaner (7 类规则) → DistributionReport → Splitter (80/10/10)
+                 Cleaner (7 类规则) → DistributionReport → Splitter (80/20 train/test)
                             │
                             ▼
-              train.jsonl / val.jsonl / test.jsonl + summary.json
+              train.jsonl /  / test.jsonl + summary.json
 ```
 
 ---
@@ -607,7 +607,7 @@ Hive / Mock fixtures ─┴─→ HiveReader(spark | pyhive | mock)
 |------|-------------------|------------|
 | `tables_meta.json` | `table_meta_v1` | 新 |
 | `item_tags.jsonl` | `item_tags_v2` | **不兼容 v1**(`tag_source` 拆分 3 族,字段数 7→8) |
-| `sft_corpus.jsonl` | `sft_corpus_v2` | **不兼容 v1**(`consumable_type` / `negative_type` / `covered_dims` / `forced_coverage` 新增) |
+| `train.jsonl + test.jsonl` | `sft_corpus_v2` | **不兼容 v1**(`consumable_type` / `negative_type` / `covered_dims` / `forced_coverage` 新增) |
 | `distribution_report.json` | `distribution_report_v1` | 新 |
 | `train/val/test.jsonl` | `train_split_v1` | 行级同 `sft_corpus_v2`,仅拆分 |
 
@@ -619,7 +619,7 @@ Hive / Mock fixtures ─┴─→ HiveReader(spark | pyhive | mock)
 
 `v1 → v2` 是一次**主版本** 升级(spec.md §Changelog):
 
-1. **7 维 → 8 维**:新增 `consumable_type`。
+1. **7 维 → 维度**:新增 `consumable_type`。
 2. **`tag_source` 拆分 3 族枚举**:`distance` 从 `raw / ai / missing` 缩为 `geo / missing`;`consumable_type` 独占 `derived`。
 3. **Stage 1 输入源变更**:`item_features_ai.jsonl` → Hive 直读。
 4. **Stage 2 `distance` 路径变更**:LLM 推断 / 几何计算 → **字典直采**。

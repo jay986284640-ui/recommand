@@ -8,7 +8,7 @@
 > 详细见项目根 `README.md` §v2.5.1。
 > 
 > **v2.5 重要变更**:表结构改用 `configs/tables.yaml` 声明,不再解析 `tabale_structer.sql`。
-> `EnrichmentPipeline` / `extract-dictionary` 都接受 `--tables-config configs/tables.yaml`。
+> `EnrichmentPipeline` / `extract-tags` 都接受 `--tables-config configs/tables.yaml`。
 > `--sql <path>` 保留为 deprecated alias(走 `parse_sql` 兼容路径)。完整变更见项目根 `README.md`。
 
 ---
@@ -16,11 +16,11 @@
 ## 概述
 
 本指南提供 5 个**可运行**的端到端验证场景,每个场景给出:前置条件 / 命令 / 期望产出 / SC 自检。
-涵盖从 YAML 表配置加载到 80/10/10 划分全流程。
+涵盖从 YAML 表配置加载到 80/20 train/test 划分全流程。
 
 **前置条件**:
 - Python 3.11+(`python3 --version`)
-- 安装依赖:`pip install -r agent-platform/training-data/requirements.txt`(含 pyyaml / jsonschema / tenacity / pytest / hypothesis)
+- 安装依赖:`pip install -r agent-platform/training-data-synonym/requirements.txt`(含 pyyaml / jsonschema / tenacity / pytest / hypothesis)
 - 已 clone 工程到本地,`cd` 到 `/opt/recommand/recommand`
 
 **注意**:本工程 CI 完全脱机(`--source=mock` + `MockLLMClient`);无需 Hive 集群 / LLM 凭据即可跑通 demo。
@@ -78,7 +78,7 @@ _meta:
 
 ## 场景 2 — Stage 1 标签补全(mock Hive)
 
-**目标**:从 mock Hive fixture 拉 100 行 × 3 类商品,产出 `item_tags.jsonl`(8 维标签 + tag_source)。
+**目标**:从 mock Hive fixture 拉 100 行 × 3 类商品,产出 `item_profile.jsonl`(维度标签 + tag_source)。
 
 **前置**:
 
@@ -100,7 +100,7 @@ python -m training_data.cli enrich \
 
 **期望产出**:
 
-- `/tmp/quickstart/enrich/item_tags.jsonl`:≥ 200 行(2 类门店各 ~100 + 券 ~100)
+- `/tmp/quickstart/enrich/item_profile.jsonl`:≥ 200 行(2 类门店各 ~100 + 券 ~100)
 - `/tmp/quickstart/enrich/tag_enrichment_failures.jsonl`:存在(可能为空,字典 reject 时有内容)
 - `/tmp/quickstart/enrich/tag_enrichment_state.jsonl`:存在
 - `/tmp/quickstart/enrich/tables_meta.json`:存在(同场景 1)
@@ -132,11 +132,11 @@ print(f'Loaded {len(tables)} tables, roles: {roles}')
 "
 
 # tag_source.distance 仅 ∈ {geo, missing}
-jq -r '.tag_source.distance' /tmp/quickstart/enrich/item_tags.jsonl | sort -u
+jq -r '.tag_source.distance' /tmp/quickstart/enrich/item_profile.jsonl | sort -u
 # 期望: "geo"  "missing"  (不允许 "raw" / "ai")
 
 # tag_source.consumable_type 仅 ∈ {derived, ai, missing}
-jq -r '.tag_source.consumable_type' /tmp/quickstart/enrich/item_tags.jsonl | sort -u
+jq -r '.tag_source.consumable_type' /tmp/quickstart/enrich/item_profile.jsonl | sort -u
 # 期望: "ai"  "derived"  "missing"
 ```
 
@@ -154,15 +154,15 @@ jq -r '.tag_source.consumable_type' /tmp/quickstart/enrich/item_tags.jsonl | sor
 
 ```bash
 python -m training_data.cli sft \
-  --input /tmp/quickstart/enrich/item_tags.jsonl \
+  --input /tmp/quickstart/enrich/item_profile.jsonl \
   --output-dir /tmp/quickstart/sft \
   --count-per-item 8 \
-  --max-message-turns 5
+  --max-message-turns 9
 ```
 
 **期望产出**:
 
-- `/tmp/quickstart/sft/sft_corpus.jsonl`:≥ 1600 行(200 items × 8)
+- `/tmp/quickstart/sft/train.jsonl + test.jsonl`:≥ 1600 行(200 items × 8)
 - `/tmp/quickstart/sft/sft_failures.jsonl`:存在(占比 < 5%)
 - `/tmp/quickstart/sft/summary.json`:存在(含 `sft.total / sft.sft_failures / sft.coverage_pass`)
 
@@ -170,7 +170,7 @@ python -m training_data.cli sft \
 
 ```bash
 # SC-004 JSONL 解析
-jq -c . /tmp/quickstart/sft/sft_corpus.jsonl | head -1
+jq -c . /tmp/quickstart/sft/train.jsonl + test.jsonl | head -1
 # 期望: 单行 JSON,无 error
 
 # SC-005 单 item 全维度覆盖率
@@ -178,11 +178,11 @@ jq -s 'group_by(.item_id) | map({
   item_id: .[0].item_id,
   covered: (map(.covered_dims[]) | unique | length),
   expected: 8
-}) | map(select(.covered < .expected))' /tmp/quickstart/sft/sft_corpus.jsonl
+}) | map(select(.covered < .expected))' /tmp/quickstart/sft/train.jsonl + test.jsonl
 # 期望: 空数组
 
 # Part B(v2.5):每条 SFT 样本的 llm_model 字段记录真实模型名
-jq -s '[.[] | .llm_model] | unique' /tmp/quickstart/sft/sft_corpus.jsonl
+jq -s '[.[] | .llm_model] | unique' /tmp/quickstart/sft/train.jsonl + test.jsonl
 # 期望: ["mock-llm"]  (或 openai 模式下的实际模型名)
 ```
 
@@ -190,16 +190,16 @@ jq -s '[.[] | .llm_model] | unique' /tmp/quickstart/sft/sft_corpus.jsonl
 
 ---
 
-## 场景 4 — 数据集 80/10/10 划分(SC-010 0 泄露)
+## 场景 4 — 数据集 80/20 train/test 划分(SC-010 0 泄露)
 
-**目标**:从 `sft_corpus.jsonl` 划 train/val/test 三文件,验证无数据泄露。
+**目标**:从 `train.jsonl + test.jsonl` 划 train/val/test 三文件,验证无数据泄露。
 **(v2.5 新)** 由 `cmd_split` 直接实现:`hashlib.md5(item_id) % 100` 桶分。
 
 **命令**:
 
 ```bash
 python -m training_data.cli split \
-  --input /tmp/quickstart/sft/sft_corpus.jsonl \
+  --input /tmp/quickstart/sft/train.jsonl + test.jsonl \
   --output-dir /tmp/quickstart/split
 # ratios 从 configs/pipeline.yaml 读(train 0.8 / val 0.1 / test 0.1)
 ```
@@ -207,7 +207,7 @@ python -m training_data.cli split \
 **期望产出**:
 
 - `/tmp/quickstart/split/train.jsonl`、`val.jsonl`、`test.jsonl` 三文件。
-- 行数比例 ≈ 80/10/10 ± 2%。
+- 行数比例 ≈ 80/20 train/test ± 2%。
 - 任一 `item_id` 不跨集合(`no_leak=True`)。
 
 **自检命令**:
@@ -262,14 +262,14 @@ cat /tmp/quickstart/e2e/verify_report.json | jq '.sc_pass'
 
 ---
 
-## 场景 6 — `extract-dictionary` 字典扩量离线(US4 / Stage 0)
+## 场景 6 — `extract-tags` 字典扩量离线(US4 / Stage 0)
 
 **目标**:从 Hive 真实数据抽取品牌 + 分类候选,产出可审核 diff 报告(**离线工具,不污染主流水线**)。
 
 **命令**:
 
 ```bash
-python -m training_data.cli extract-dictionary \
+python -m training_data.cli extract-tags \
   --tables-config configs/tables.yaml \
   --source mock \
   --fixture-dir tests/fixtures/hive \
@@ -367,7 +367,7 @@ python -m training_data.cli all \
 | `TablesConfigError: invalid role` | 检查 `configs/tables.yaml` 中 `role` 是否 ∈ Role 枚举 |
 | `TablesConfigError: ... is missing required columns for field_contract` | **v2.5.1**:表声明的 `role:` 标注未覆盖 `_meta.field_contract.<role>.required`。给缺失字段加 `role: <r>` 标注,或更新上游 SQL / fixture 提供。 |
 | 自拓展门店 `shop_lng`/`shop_lat` 缺失 → distance = null | **v2.5.1**:上游 SQL 视图未把 `o2o_new_gut_shop_address` JOIN 进来。代码不再做隐式 join;改上游视图或在 fixture pre-join。 |
-| `Brnd_Nm` 空导致 merchant=null | **v2.5.1**:检查 `LLMEnricher.inferred_used_count`(应 ≥ 1);若 = 0,可能是 `Str_Nm` 也是空或匹配规则文案(`满50减10` 等)。 |
+| `Brnd_Nm` 空导致 brand=null | **v2.5.1**:检查 `LLMEnricher.inferred_used_count`(应 ≥ 1);若 = 0,可能是 `Str_Nm` 也是空或匹配规则文案(`满50减10` 等)。 |
 | Stage 1 启动即退 0 | `--source mock` 试通;若仍失败 → fixture 缺表 |
 | LLM 大量 `JSONDecodeError` | 默认 `--provider mock` 试通;确认 mock fixture 完整 |
 | 字典 reject 计数 > 0 | 查 `tag_enrichment_failures.jsonl` 中 `error="dict_rejection"`;可能需扩 `dim_dictionary.yaml` |
@@ -384,7 +384,7 @@ python -m training_data.cli all \
 运行命令:
 
 ```bash
-pytest agent-platform/training-data/tests/integration/ -v
+pytest agent-platform/training-data-synonym/tests/integration/ -v
 ```
 
 ---
@@ -397,7 +397,7 @@ pytest agent-platform/training-data/tests/integration/ -v
 - [./research.md](./research.md) — 14 个技术决策(D-001 ~ D-014)
 - [./contracts/item_tags_v2.md](./contracts/item_tags_v2.md) — Stage 1 schema
 - [./contracts/sft_corpus_v2.md](./contracts/sft_corpus_v2.md) — Stage 2 schema
-- [./contracts/param_op_types_v2.md](./contracts/param_op_types_v2.md) — 8 维 × 4 op 映射
+- [./contracts/param_op_types_v2.md](./contracts/param_op_types_v2.md) — 维度 × 4 op 映射
 - [./contracts/hive_read_v1.md](./contracts/hive_read_v1.md) — Hive 读侧契约
 - [../checklists/requirements.md](../checklists/requirements.md) — Spec quality checklist
 - [../docs/ALIGNMENT_cib_o2o.md](../../docs/ALIGNMENT_cib_o2o.md) — 与 CIB O2O 业务对齐

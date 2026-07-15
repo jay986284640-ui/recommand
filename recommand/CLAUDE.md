@@ -11,32 +11,64 @@ H5 通过对话接口调用,Agent 编排工具,数据来自离线管线与运行
 
 ```
 recommand/
-├── specs/                    # 设计文档(Spec Kit 工作流产物)
-│   └── 001-promo-recommend-agent/
-├── agent-platform/           # 运行时 + 离线实现
-│   ├── data-pipeline/        # 离线数据处理管线(Spark 批处理)
-│   ├── main-agent/           # 主 Agent(对话入口、Session、跨子 Agent 编排)— tasks.md 待实现
-│   └── local-promo-agent/    # LP 子 Agent(推荐/下单/券包/排除)— tasks.md 待实现
-├── CLAUDE.md                 # 本文件
-└── .specify/                 # Spec Kit 工作流脚本
+├── agent-platform/
+│   ├── data-pipeline/            # 离线数据处理管线(Spark 批处理)
+│   ├── training-data-synonym/    # 训练数据生成管线(标签+SFT语料+同义词)
+│   │   ├── training_data/        # Python 包(enricher/sft/cli/common)
+│   │   ├── synonym-dictionary/   # 同义词生成模块
+│   │   ├── configs/              # tables.yaml / pipeline.yaml / prompts
+│   │   └── output/               # 产出目录(stage1/stage2/sft)
+│   ├── main-agent/               # 主 Agent(待实现)
+│   └── local-promo-agent/        # LP 子 Agent(待实现)
+├── knowledge_database/           # 原始 CSV 数据
+└── specs/                        # 设计文档
 ```
 
 ## 常用命令
 
+### 训练数据管线
+
 ```bash
-# 离线数据管线(全部 4 步一键跑)
+cd agent-platform/training-data-synonym
+
+# 环境变量(API Key)
+export OPENAI_API_KEY="sk-xxx"
+
+# Stage 1: 标签抽取 → dim_dictionary_snapshot.yaml
+python -m training_data.cli extract-tags \
+    --source csv --output-dir output/stage1 \
+    --frequency-min 1 --provider openai_compat
+
+# Stage 2: 字典约束标注 → item_tags.jsonl + item_profile.jsonl
+python -m training_data.cli enrich \
+    --source csv --output-dir output/stage2 \
+    --dict-snapshot output/stage1/dim_dictionary_snapshot.yaml \
+    --provider openai_compat
+
+# Stage 3: SFT 语料合成 → train.jsonl + test.jsonl
+python -m training_data.cli sft \
+    --input output/stage2/item_profile.jsonl \
+    --output-dir output/sft \
+    --provider openai_compat \
+    --count-per-item 8 --max-items 1000
+
+# 同义词生成 → ext_dict.txt + ext_synonyms.txt
+python -m training_data.cli generate-synonyms \
+    --dict-snapshot output/stage1/dim_dictionary_snapshot.yaml \
+    --provider openai_compat
+
+# 测试用(限制条数)
+head -10 output/stage2/item_profile.jsonl > /tmp/test.jsonl
+python -m training_data.cli sft --input /tmp/test.jsonl --provider openai_compat --max-items 10
+```
+
+### 离线数据管线
+
+```bash
 cd agent-platform/data-pipeline
 python run_pipeline.py --config configs/datasets/meituan_coupon.yaml --output-dir ./pipeline_output
-
-# 离线数据管线(分步)
-python run_audit.py             --config configs/datasets/meituan_coupon.yaml
-python run_cleaning.py          --config configs/datasets/meituan_coupon.yaml --output ./pipeline_output/cleaned
-python run_normalization.py     --config configs/datasets/meituan_coupon.yaml --input  ./pipeline_output/cleaned --output ./pipeline_output/normalized
-python run_feature_extraction.py --config configs/datasets/meituan_coupon.yaml --input ./pipeline_output/normalized
-
-# 数据管线测试(需安装 pyspark + pytest)
-pip install -r agent-platform/data-pipeline/requirements.txt pytest
-pytest agent-platform/data-pipeline/tests/ -v
+pip install -r requirements.txt pytest
+pytest tests/ -v
 ```
 
 ## 离线管线 ↔ 运行时 Agent 数据契约
