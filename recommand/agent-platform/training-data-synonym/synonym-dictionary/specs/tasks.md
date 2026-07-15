@@ -39,7 +39,7 @@
 ```
 Phase 1 Setup (T001~T003)
    ↓
-Phase 2 Foundational (T004~T008)  ← 共享配置 / 子包骨架 / 反义词词典 / 品牌词典
+Phase 2 Foundational (T004~T008)  ← 共享配置 / 子包骨架 / 反义词词典 / dim_dictionary_snapshot.yaml
    ↓
    ├── US1 (P1) 品牌规则词典 (T009~T014)
    ├── US2 (P1) LLM 抽取 (T015~T020)
@@ -61,12 +61,12 @@ Phase 5 Polish (T039~T042)
 
 ## Phase 2: Foundational(共享基础设施)
 
-> 这一阶段没有独立用户故事,但所有 US 都依赖。**先**写配置加载 + 反义词词典 + 品牌词典。
+> 这一阶段没有独立用户故事,但所有 US 都依赖。**先**写配置加载 + 反义词词典 + dim_dictionary_snapshot.yaml。
 
 - [ ] T004 [P] 在 `common/config_loader.py` 增加 `SynonymConfig` dataclass(enabled / mode / rule / llm / embedding / merger / output 5 段),见 spec.md §10
 - [ ] T005 [P] 在 `synonym/__init__.py` 暴露 `SynonymPipeline`、`SynonymGroup`、`SynonymMerger` 三个公开符号
 - [ ] T006 [P] 创建 `synonym/llm_extractor.py`:`LLMExtractor` 类(继承 / 复用 001 `ai_enhance.llm_client.LLMClient`),加 `extract_synonyms(ai_features) -> List[SynonymGroup]` 方法
-- [ ] T007 [P] 创建 `configs/brand_dictionary.yaml`:**50+ 品牌**按品类分组(咖啡 / 快餐 / 奶茶 / 烘焙 / 便利店),见 plan.md D-002
+- [ ] T007 [P] 创建 `configs/dim_dictionary_snapshot.yaml.yaml`:**50+ 品牌**按品类分组(咖啡 / 快餐 / 奶茶 / 烘焙 / 便利店),见 plan.md D-002
 - [ ] T008 [P] 创建 `configs/antonym_pairs.yaml`:**50+ 反义词对**(好/坏/大/小/热/冷/甜/咸/浓/淡...)
 
 ---
@@ -74,18 +74,18 @@ Phase 5 Polish (T039~T042)
 ## US1 (P1) — 品牌规则词典
 
 **Story Goal**:加载 50+ 预置品牌同义词,品牌上线第一天就能正确召回
-**Independent Test**:加载 `configs/brand_dictionary.yaml`,产出 50+ 组同义词,每组 ES Solr 格式合法(SC-002)
+**Independent Test**:加载 `configs/dim_dictionary_snapshot.yaml.yaml`,产出 50+ 组同义词,每组 ES Solr 格式合法(SC-002)
 
 ### Tests for User Story 1
 
-- [ ] T009 [P] [US1] 单元测试:brand_dictionary 加载 yaml 解析 + 字段校验(canonical / variants / category),在 `tests/synonym/test_brand_dictionary.py` (FR-001)
+- [ ] T009 [P] [US1] 单元测试:dim_dictionary_snapshot.yaml 加载 yaml 解析 + 字段校验(canonical / variants / category),在 `tests/synonym/test_dim_dictionary_snapshot.yaml.py` (FR-001)
 - [ ] T010 [P] [US1] 单元测试:50+ 品牌覆盖率(SC-002):fixture 含 20 个常见品牌(KFC/Starbucks/喜茶/瑞幸...),19+ 命中(95% 覆盖率)
 - [ ] T011 [P] [US1] 单元测试:每组至少 2 个词(无单元素组),无重复,无空变体
 
 ### Implementation for User Story 1
 
-- [ ] T012 [P] [US1] 实现 `synonym/brand_dictionary.py`:`load_brand_dictionary(path) -> List[BrandEntry]`(FR-001)
-- [ ] T013 [P] [US1] 实现 `synonym/brand_dictionary.py`:`brand_to_synonym_groups(brands) -> List[SynonymGroup]`,每品牌 1 组,variants 全展开
+- [ ] T012 [P] [US1] 实现 `synonym/dim_dictionary_snapshot.yaml.py`:`load_dim_dictionary_snapshot.yaml(path) -> List[BrandEntry]`(FR-001)
+- [ ] T013 [P] [US1] 实现 `synonym/dim_dictionary_snapshot.yaml.py`:`brand_to_synonym_groups(brands) -> List[SynonymGroup]`,每品牌 1 组,variants 全展开
 - [ ] T014 [US1] 实现 `synonym/pipeline.py` 中 `_step_rule()` 方法,加载规则词典 + 转换为 SynonymGroup 列表
 
 ---
@@ -93,7 +93,7 @@ Phase 5 Polish (T039~T042)
 ## US2 (P1) — LLM 抽取
 
 **Story Goal**:用 LLM 从 item_title 抽长尾同义词(预置词典没覆盖到的)
-**Independent Test**:50 items fixture → LLM 抽 50~200 组同义词,与品牌词典不重叠的长尾占比 ≥ 60%
+**Independent Test**:50 items fixture → LLM 抽 50~200 组同义词,与dim_dictionary_snapshot.yaml不重叠的长尾占比 ≥ 60%
 
 ### Tests for User Story 2
 
@@ -157,7 +157,7 @@ Phase 5 Polish (T039~T042)
 
 - [ ] T039 [P] 更新根 `agent-platform/data-pipeline/README.md` 加"ES 同义词词表生成"章节 + 拓扑图(批 → AI 增强 → 同义词 → ES 索引 → LP Agent 检索)
 - [ ] T040 [P] 文档:在 `contracts/solr_synonyms_format.md` 写 Solr 多向格式详细说明(对应 spec.md §5 FR-005)
-- [ ] T041 [P] 文档:在 `contracts/brand_dictionary_schema.md` 写 `brand_dictionary.yaml` schema 详细说明
+- [ ] T041 [P] 文档:在 `contracts/dim_dictionary_snapshot.yaml_schema.md` 写 `dim_dictionary_snapshot.yaml.yaml` schema 详细说明
 - [ ] T042 端到端集成测试:在 `tests/e2e/test_pipeline_with_synonym.py` 跑"批 → AI 增强 → 同义词生成"完整流程,30 min 内完成(SC-001)
 
 ---

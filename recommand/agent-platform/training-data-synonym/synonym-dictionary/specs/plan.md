@@ -12,7 +12,7 @@
 
 | 能力 | 接入位置 | 触发方式 | 产出来源 |
 |------|----------|----------|----------|
-| ES 同义词词表 | `synonym/` 新增子模块 | 独立 `run_build_synonyms.py`,手动 / 调度 | `item_features_ai.jsonl` + 品牌词典 + LLM + embedding → 合并 → `synonyms_solr.txt` |
+| ES 同义词词表 | `synonym/` 新增子模块 | 独立 `run_build_synonyms.py`,手动 / 调度 | `item_features_ai.jsonl` + dim_dictionary_snapshot.yaml + LLM + embedding → 合并 → `ext_synonyms.txt` |
 
 ---
 
@@ -24,10 +24,10 @@
 - LLM SDK(沿用 001 的客户端,直接复用)
 - `sentence-transformers`(本地 embedding 推理,`bge-small-zh` 模型)
 - `scikit-learn`(余弦相似度 + 聚类)
-- `pyyaml`(品牌词典 / 反义词对加载)
+- `pyyaml`(dim_dictionary_snapshot.yaml / 反义词对加载)
 
 **Storage**:
-- 主输出:`./synonyms_solr.txt`(ES 直接消费)
+- 主输出:`./ext_synonyms.txt`(ES 直接消费)
 - 元信息:`./synonyms_meta.json`
 - 统计:`./synonyms_stats.json`
 - 失败日志:`./synonym_failures.jsonl`
@@ -46,7 +46,7 @@
   - LLM 抽取 ~ 5 min(50 req/min × 16 并发)
   - Embedding 推理 ~ 5 min(GPU)/ 15 min(CPU,本地推理)
   - 合并 + 输出 ~ 30s
-- 品牌词典加载 < 1s(yaml 解析)
+- dim_dictionary_snapshot.yaml加载 < 1s(yaml 解析)
 
 **Constraints**:
 - 不动 001 增强管线(`ai_enhance/`)
@@ -59,7 +59,7 @@
 
 **Scale/Scope**:
 - item 总量:1w~10w SKU(沿用 001)
-- 品牌词典初版 50+ 品牌,运营可持续扩量
+- dim_dictionary_snapshot.yaml初版 50+ 品牌,运营可持续扩量
 - 目标同义词组数 200~2000(SC-005 ≤ 10000)
 
 ---
@@ -99,7 +99,7 @@
 agent-platform/data-pipeline/
 ├── synonym/                                 # 新增子包
 │   ├── __init__.py
-│   ├── brand_dictionary.py                  # 规则源(预置品牌词表加载)
+│   ├── dim_dictionary_snapshot.yaml.py                  # 规则源(预置品牌词表加载)
 │   ├── llm_extractor.py                     # LLM 抽取(item_title → 同义词)
 │   ├── embedding_cluster.py                 # Embedding 聚类(向量相似度)
 │   ├── merger.py                            # 3 源合并 + 反义词过滤
@@ -108,7 +108,7 @@ agent-platform/data-pipeline/
 │   ├── antomym_filter.py                    # 反义词拒收
 │   └── pipeline.py                          # SynonymPipeline 编排
 ├── configs/
-│   ├── brand_dictionary.yaml                # 新增:50+ 品牌按品类分组
+│   ├── dim_dictionary_snapshot.yaml.yaml                # 新增:50+ 品牌按品类分组
 │   ├── antomym_pairs.yaml                   # 新增:50+ 反义词对
 │   ├── tag_dictionary.yaml                  # 001 已有,本 spec 沿用
 │   └── prompts/
@@ -117,7 +117,7 @@ agent-platform/data-pipeline/
 │       └── synonym_extraction_v1.txt        # 新增:LLM 抽取 prompt
 ├── tests/
 │   └── synonym/                             # 新增测试子包
-│       ├── test_brand_dictionary.py
+│       ├── test_dim_dictionary_snapshot.yaml.py
 │       ├── test_llm_extractor.py
 │       ├── test_embedding_cluster.py
 │       ├── test_merger.py
@@ -137,7 +137,7 @@ agent-platform/data-pipeline/
 | ID | 决策点 | 选项 | 推荐 |
 |----|--------|------|------|
 | D-001 | 3 源混合策略 | 顺序(rule → llm → embedding) / 并行(3 源并发) | **顺序**:LLM 和 embedding 都需要 item_features_ai,顺序跑资源友好;并行也可以但收益小 |
-| D-002 | 品牌词典 schema | 单层 dict / 分组(品类 + 品牌) | **分组(品类 + 品牌)**:便于按品类过滤;也便于运营按品类维护 |
+| D-002 | dim_dictionary_snapshot.yaml schema | 单层 dict / 分组(品类 + 品牌) | **分组(品类 + 品牌)**:便于按品类过滤;也便于运营按品类维护 |
 | D-003 | LLM 抽取 prompt 范式 | 1 段(每商品 1 次) / batch(多商品 1 次) | **1 段**:LLM 1 段抽 1~5 组,简单可控;batch 难控制输出 |
 | D-004 | Embedding 模型 | bge-small-zh / bge-base-zh / text2vec-base-chinese | **bge-small-zh**:小、快(91M 参数)、中文优化、本地推理 5min 跑完 1w items |
 | D-005 | 反义词过滤 | 拒收 / 标记后人工 review | **拒收**(SC-004):宁缺毋滥,反义词合并召回错误更糟 |
@@ -161,8 +161,8 @@ agent-platform/data-pipeline/
 
 ### 1.2 新增 contracts
 
-- `contracts/solr_synonyms_format.md` — `synonyms_solr.txt` ES Solr 多向格式详细说明
-- `contracts/brand_dictionary_schema.md` — `configs/brand_dictionary.yaml` schema 详细说明
+- `contracts/solr_synonyms_format.md` — `ext_synonyms.txt` ES Solr 多向格式详细说明
+- `contracts/dim_dictionary_snapshot.yaml_schema.md` — `configs/dim_dictionary_snapshot.yaml.yaml` schema 详细说明
 - `contracts/antonym_pairs_schema.md` — `configs/antomym_pairs.yaml` schema 详细说明
 
 ### 1.3 复用 001 / 002
@@ -188,7 +188,7 @@ agent-platform/data-pipeline/
 | 文件 | 类型 | 说明 |
 |------|------|------|
 | `synonym/__init__.py` | 新增 | 子包入口 |
-| `synonym/brand_dictionary.py` | 新增 | `load_brand_dictionary(path) -> List[BrandEntry]` |
+| `synonym/dim_dictionary_snapshot.yaml.py` | 新增 | `load_dim_dictionary_snapshot.yaml(path) -> List[BrandEntry]` |
 | `synonym/llm_extractor.py` | 新增 | `LLMExtractor` 调 001 复用 LLMClient + 抽同义词 |
 | `synonym/embedding_cluster.py` | 新增 | `EmbeddingClusterer` 用 `bge-small-zh` + 余弦聚类 |
 | `synonym/antomym_filter.py` | 新增 | `AntonymFilter` 加载反义词对 + 拒收 |
@@ -196,10 +196,10 @@ agent-platform/data-pipeline/
 | `synonym/es_formatter.py` | 新增 | `format_solr(groups, output_path)` Solr 多向格式 |
 | `synonym/stats.py` | 新增 | `compute_stats(groups, output_path)` |
 | `synonym/pipeline.py` | 新增 | `SynonymPipeline.run()` 编排 4 步 |
-| `configs/brand_dictionary.yaml` | 新增 | 50+ 品牌按品类分组(咖啡/快餐/奶茶/烘焙/便利店) |
+| `configs/dim_dictionary_snapshot.yaml.yaml` | 新增 | 50+ 品牌按品类分组(咖啡/快餐/奶茶/烘焙/便利店) |
 | `configs/antomym_pairs.yaml` | 新增 | 50+ 反义词对(好/坏/大/小/热/冷/甜/咸...) |
 | `configs/prompts/synonym_extraction_v1.txt` | 新增 | LLM 抽取 prompt |
-| `tests/synonym/test_brand_dictionary.py` | 新增 | yaml 加载 + 50+ 品牌覆盖率(SC-002) |
+| `tests/synonym/test_dim_dictionary_snapshot.yaml.py` | 新增 | yaml 加载 + 50+ 品牌覆盖率(SC-002) |
 | `tests/synonym/test_llm_extractor.py` | 新增 | mock-llm 抽 50 items |
 | `tests/synonym/test_embedding_cluster.py` | 新增 | bge-small-zh 聚类 + 距离阈值 |
 | `tests/synonym/test_antonym_filter.py` | 新增 | 50 对反义词全部不合并(SC-004) |
@@ -224,6 +224,6 @@ agent-platform/data-pipeline/
 ## Next Steps
 
 1. **Phase 0 research.md** 在 D-001~D-007 7 个点收敛;`bge-small-zh` 模型选择实测
-2. **Phase 1 design** `data-model.md` 增量 + `contracts/{solr_synonyms_format, brand_dictionary_schema, antomym_pairs_schema}.md`
+2. **Phase 1 design** `data-model.md` 增量 + `contracts/{solr_synonyms_format, dim_dictionary_snapshot.yaml_schema, antomym_pairs_schema}.md`
 3. **/speckit-tasks** 按 US1~US4 拆任务,测试 11~13 个先于实现
 4. **/speckit-implement** 按任务执行

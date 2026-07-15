@@ -74,7 +74,7 @@ class SynonymEntry:
 
 ## 实体 3:`BrandEntry`(规则词典元素)
 
-`configs/brand_dictionary.yaml` 的元素。
+`configs/dim_dictionary_snapshot.yaml.yaml` 的元素。
 
 | 字段 | Python 类型 | YAML 类型 | 必填 | 说明 |
 |------|------------|-----------|------|------|
@@ -236,7 +236,7 @@ class SynonymStats:
             ┌─────────────────┼─────────────────┐
             ↓                 ↓                 ↓
    ┌─────────────────┐ ┌──────────────┐ ┌──────────────────┐
-   │ 品牌词典        │ │ LLM 抽取器   │ │ Embedding 聚类   │
+   │ dim_dictionary_snapshot.yaml        │ │ LLM 抽取器   │ │ Embedding 聚类   │
    │ (yaml 加载)     │ │ (001 复用)   │ │ (bge-small-zh)   │
    │ → BrandEntry[]  │ │              │ │ → EmbeddingCluster[]
    └────────┬────────┘ └──────┬───────┘ └────────┬─────────┘
@@ -263,7 +263,7 @@ class SynonymStats:
               ↓                               ↓
     ┌──────────────────┐            ┌──────────────────┐
     │ ESFormatter      │            │ Stats            │
-    │ → synonyms_solr.txt            │ → synonyms_stats.json
+    │ → ext_synonyms.txt            │ → synonyms_stats.json
     │ (FR-005, SC-003) │            │ (FR-006)         │
     └──────────────────┘            └──────────────────┘
                               ↓
@@ -280,7 +280,7 @@ class SynonymStats:
 ```
 1. 读取 ./item_features_ai.jsonl                       # 001 增强产物
    ↓
-2. 加载 ./configs/brand_dictionary.yaml              # 规则源
+2. 加载 ./configs/dim_dictionary_snapshot.yaml.yaml              # 规则源
    → List[BrandEntry]
    ↓ brand_to_synonym_groups()
 3. List[SynonymGroup] (rule)                          # 50+ 组
@@ -301,7 +301,7 @@ class SynonymStats:
    - 无交集 → 各自保留
    - 长度限制(单词 ≤ 20,组 ≤ 10,总 ≤ 10000)
    ↓
-8. ESFormatter → ./synonyms_solr.txt                # Solr 多向格式
+8. ESFormatter → ./ext_synonyms.txt                # Solr 多向格式
    ↓
 9. MetaWriter → ./synonyms_meta.json                # 元信息
    ↓

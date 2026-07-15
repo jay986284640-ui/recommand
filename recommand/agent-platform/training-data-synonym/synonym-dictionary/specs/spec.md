@@ -15,7 +15,7 @@
 
 - **核心痛点**:用户搜"咖啡"找不到"拿铁 / latte";搜"肯德基"找不到"KFC / kfc";搜"星巴克"找不到"Starbucks / STARBUCKS"。
 - **方案**:**3 源混合**(规则词典 + LLM 抽取 + embedding 聚类)→ 合并验证 → 输出 ES Solr 多向同义词格式
-- **产出**:`synonyms_solr.txt`(ES `synonym_graph` filter 直接消费)+ `synonyms_meta.json`(版本追溯)
+- **产出**:`ext_synonyms.txt`(ES `synonym_graph` filter 直接消费)+ `synonyms_meta.json`(版本追溯)
 
 不动现有代码,只追加新子包 `synonym/` + 1 个入口 `run_build_synonyms.py`。
 
@@ -60,14 +60,14 @@ LP Agent 用 ES 做商品粗排 / 召回,当前痛点:
 |------|------|------|
 | `item_features_ai.jsonl` | 001 增强产物 | 抽 `item_title` / `item_description` / `ai_tags`,做 LLM 抽取 + embedding 聚类 |
 | `configs/tag_dictionary.yaml` | 7 维字典 | 品类同义词基础(味/场/材/域/人/情/就) |
-| `configs/brand_dictionary.yaml` | **新增**:预置品牌词表 | 50+ 常见品牌(中英文 / 拼音 / 拼写错误)按品类分组 |
+| `configs/dim_dictionary_snapshot.yaml.yaml` | **新增**:预置品牌词表 | 50+ 常见品牌(中英文 / 拼音 / 拼写错误)按品类分组 |
 | `configs/prompts/synonym_extraction_v1.txt` | **新增**:LLM 抽取 prompt | LLM 从 item_title 抽同义词 |
 
 ### 3.2 输出
 
 | 路径 | 用途 |
 |------|------|
-| `synonyms_solr.txt` | **主产出**:ES `synonym_graph` filter 直接消费(Solr 多向格式) |
+| `ext_synonyms.txt` | **主产出**:ES `synonym_graph` filter 直接消费(Solr 多向格式) |
 | `synonyms_meta.json` | 元信息:版本 / 生成时间 / 3 源贡献占比 / 模型版本 |
 | `synonyms_stats.json` | 统计:词条数 / 平均每组词数 / 覆盖率 / 反义词合并数(应 = 0) |
 
@@ -79,7 +79,7 @@ LP Agent 用 ES 做商品粗排 / 召回,当前痛点:
 
 > 作为 ES 索引构建方,我想有 50+ 预置品牌的同义词表(KFC/肯德基/Starbucks/星巴克等),品牌上线第一天就能正确召回。
 
-**独立可测试**:加载 `configs/brand_dictionary.yaml`,产出 50+ 组同义词(SC-002 覆盖率),每组 ES Solr 格式合法。
+**独立可测试**:加载 `configs/dim_dictionary_snapshot.yaml.yaml`,产出 50+ 组同义词(SC-002 覆盖率),每组 ES Solr 格式合法。
 
 **场景**:
 - KFC / 肯德基 / 肯打鸡(常见错别字)→ 1 组
@@ -92,7 +92,7 @@ LP Agent 用 ES 做商品粗排 / 召回,当前痛点:
 
 > 作为数据工程师,我想用 LLM 从 `item_title` 中抽长尾同义词(预置词典没覆盖到的),不靠人工补。
 
-**独立可测试**:50 个商品 fixture → LLM 抽 50~200 组同义词,与品牌词典不重叠的长尾占比 ≥ 60%。
+**独立可测试**:50 个商品 fixture → LLM 抽 50~200 组同义词,与dim_dictionary_snapshot.yaml不重叠的长尾占比 ≥ 60%。
 
 **场景**:
 - "星巴克 拿铁 中杯" → 抽"中杯 / 中杯装 / grande"
@@ -130,7 +130,7 @@ LP Agent 用 ES 做商品粗排 / 召回,当前痛点:
 
 ### FR-001 品牌规则词典加载
 
-- 输入:`configs/brand_dictionary.yaml`(新增,50+ 品牌按品类分组)
+- 输入:`configs/dim_dictionary_snapshot.yaml.yaml`(新增,50+ 品牌按品类分组)
 - 输出:`List[SynonymGroup]`,每组 1 个品牌 + 所有变体
 - 加载:启动时一次性读,yaml 变更需重启或显式 reload
 - 验证:每组至少 2 个词(否则拒收),无重复
@@ -217,7 +217,7 @@ ES `synonym_graph` filter 的 Solr 格式:
 - `#` 开头为注释行(脚本自动生成头部注释)
 - 末尾留 `\n`,无空行
 
-**文件**:`./synonyms_solr.txt`
+**文件**:`./ext_synonyms.txt`
 
 **元信息文件** `synonyms_meta.json`:
 ```json
@@ -255,7 +255,7 @@ ES `synonym_graph` filter 的 Solr 格式:
 | ID | 标准 | 验证方式 |
 |----|------|----------|
 | SC-001 | 1 万 items × 3 源处理 < 30 min(LLM 50 req/min,embedding 30s 内) | `time python run_build_synonyms.py` |
-| SC-002 | 预置品牌词表覆盖率 ≥ 80%(测试集含 20 个常见品牌,18+ 命中) | 写 20 个品牌 fixture,跑 brand_dictionary 验证 |
+| SC-002 | 预置品牌词表覆盖率 ≥ 80%(测试集含 20 个常见品牌,18+ 命中) | 写 20 个品牌 fixture,跑 dim_dictionary_snapshot.yaml 验证 |
 | SC-003 | 输出文件 100% 可被 ES `synonym_graph` filter 解析(ES 7.x 解析无错) | 跑 ES 集成测试,索引 100 个商品 + 20 个查询,召回率 ≥ 90% |
 | SC-004 | **100% 无反义词合并**(SC-004 最重要):维护 50 对反义词,合并后 0 对被错误合并 | 跑 `antonym_test.py`,50 对全部应不合并 |
 | SC-005 | 总组数 ≤ 10000,单词长度 ≤ 20 字符,符合 ES 性能规范 | 读 `synonyms_stats.json` 校验 |
@@ -268,7 +268,7 @@ ES `synonym_graph` filter 的 Solr 格式:
 - (A-002) ES 7.x+ 已部署,`synonym_graph` filter 已配置(由 ES 运维负责,本 spec 不涉及)
 - (A-003) Embedding 服务可本地推理(无网络依赖,模型本地加载)
 - (A-004) LLM 平台沿用 001 spec 的"大模型平台托管 API"
-- (A-005) `configs/brand_dictionary.yaml` 由运营维护,初版 50+ 品牌,后续扩量
+- (A-005) `configs/dim_dictionary_snapshot.yaml.yaml` 由运营维护,初版 50+ 品牌,后续扩量
 - (A-006) 同义词表只在**索引构建时**应用(query 时不应用),保证召回完整性
 
 ---
@@ -296,7 +296,7 @@ synonym:
   # === 规则源(US1) ===
   rule:
     enabled: true
-    brand_dictionary_path: configs/brand_dictionary.yaml
+    dim_dictionary_snapshot.yaml_path: configs/dim_dictionary_snapshot.yaml.yaml
     min_group_size: 2
   
   # === LLM 抽取(US2) ===
@@ -329,7 +329,7 @@ synonym:
   
   # === 输出 ===
   output:
-    synonyms_path: ./synonyms_solr.txt
+    synonyms_path: ./ext_synonyms.txt
     meta_path: ./synonyms_meta.json
     stats_path: ./synonyms_stats.json
 ```
@@ -349,7 +349,7 @@ synonym:
 - 001 spec:`specs/001-promo-recommend-agent/spec.md`(LP Agent)
 - 001 增强 spec:`specs/001-data-pipeline-enhancement/spec.md`(7 维 AI 标签源)
 - 002 spec:`specs/002-training-data-generator/spec.md`(独立 spec)
-- 品牌词典:`configs/brand_dictionary.yaml`(本 spec 新增)
+- dim_dictionary_snapshot.yaml:`configs/dim_dictionary_snapshot.yaml.yaml`(本 spec 新增)
 - 反义词词典:`configs/antonym_pairs.yaml`(本 spec 新增)
 - 输出格式:本 spec 目录 `contracts/solr_synonyms_format.md`
 - 数据模型:本 spec 目录 `data-model.md`
