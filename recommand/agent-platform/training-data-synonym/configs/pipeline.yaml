@@ -54,6 +54,7 @@ training_data:
     output_path: ./sft_corpus.jsonl
     failures_path: ./sft_failures.jsonl
     tag_keys: [brand, category, taste, occasion, consumable_type, avg_prc, distance]
+    param_keys: [category, brand, distance, price, taste, occasion, consumable_type]
     concurrency: 4
     numeric_fields: [avg_prc]
     count_per_item: 8                  # 5~12

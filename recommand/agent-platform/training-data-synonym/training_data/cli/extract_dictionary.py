@@ -635,11 +635,11 @@ def extract(
     cat_tuples = llm_tags.get("category", [])
 
     # Remaining LLM-inferred label dims — exclude brand/category (special
-    # handling) and numeric/geo dims that are not labels (avg_prc, distance, age).
+    # handling) and numeric/geo dims that are not labels (avg_prc, distance).
     label_dims = {
         d: tuples
         for d, tuples in llm_tags.items()
-        if d not in {"brand", "category", "avg_prc", "distance", "age"}
+        if d not in {"brand", "category", "avg_prc", "distance"}
     }
 
     # ---- process each dimension -------------------------------------------

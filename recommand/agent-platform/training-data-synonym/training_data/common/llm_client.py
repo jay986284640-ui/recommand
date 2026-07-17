@@ -147,7 +147,6 @@ class MockLLMClient(LLMClient):
             "category": cat if cat else "咖啡",
             "brand": merch if merch else None,
             "avg_prc": self._bucket_price(avg) if avg else None,
-            "age": "25-35" if self._rng.random() > 0.5 else None,
             "occasion": self._rng.choice(["下午茶", "午餐", None]),
             "taste": self._rng.choice([["甜"], ["咸"], None]),
         }

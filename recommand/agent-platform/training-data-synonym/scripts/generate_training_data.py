@@ -2,7 +2,7 @@
 
 流程:
   1. 读 o2o 门店表(SQL 解析 + 模拟数据,不依赖 Hive)
-  2. 抽 7 维商业属性(category/merchant/avg_prc/distance/age/occasion/taste)
+  2. 抽 6 维商业属性(category/merchant/avg_prc/distance/occasion/taste)
   3. mock-llm 生成 N 条对话样本
   4. 字典校验(7 维值必须在 dim_dictionary.yaml 内)
   5. 清洗(7 规则)
@@ -85,7 +85,6 @@ def synthesize_shop_features(
     merchants_pool = dim_values.get("merchant", [None])
     avg_prcs = dim_values.get("avg_prc", [])
     distances = dim_values.get("distance", [])
-    ages = dim_values.get("age", [])
     occasions = dim_values.get("occasion", [])
     tastes = dim_values.get("taste", [])
 
@@ -98,7 +97,6 @@ def synthesize_shop_features(
             "merchant": merchant,
             "avg_prc": rng.choice(avg_prcs) if avg_prcs else None,
             "distance": rng.choice(distances) if distances else None,
-            "age": rng.choice(ages) if ages else None,
             "occasion": rng.choice(occasions) if occasions else None,
             "taste": rng.sample(tastes, k=rng.randint(1, min(3, len(tastes)))) if tastes else None,
         })

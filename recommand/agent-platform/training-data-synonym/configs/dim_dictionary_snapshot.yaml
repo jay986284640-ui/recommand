@@ -121,15 +121,6 @@ distance:
   - 500-1000
   - 1000-3000
   - 3000+
-age:
-  desc: 客户年龄段(从 CDM.SEX_ID + birth_dt 推断)
-  op: in
-  values:
-  - 25-35
-  - 18-25
-  - 35-45
-  - 45-55
-  - 55+
 occasion:
   desc: 消费场合(从 c10.evt_time + prd_typ 推断)
   op: in

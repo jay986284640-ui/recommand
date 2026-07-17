@@ -126,12 +126,6 @@ distance:
   values: ["0-500", "500-1000", "1000-3000", "3000+"]
   op: in           # SFT 中可 in / not_in
 
-# ──── 用户侧 3 维 ────
-age:
-  desc: 客户年龄段(从 CDM.SEX_ID + birth_dt 推断)
-  values: ["18-25", "25-35", "35-45", "45-55", "55+"]
-  op: in
-
 occasion:
   desc: 消费场合(从 c10.evt_time + prd_typ 推断)
   values:

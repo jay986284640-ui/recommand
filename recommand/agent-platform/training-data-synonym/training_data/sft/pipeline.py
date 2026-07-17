@@ -18,7 +18,7 @@ from typing import Optional
 from ..common.config import Config
 from ..common.llm_client import LLMClient
 from ..common.logging import get_logger
-from ..data_model import ItemTags, Role, SFTSample
+from ..data_model import ItemTags, Role, SFTSample, _PARAM_ORDER_FALLBACK
 from .failures import SFTFailure, SFTFailureWriter
 from .llm_generator import LLMGenerator
 from .prompt import load_template
@@ -68,8 +68,13 @@ class SFTPipeline:
         self.prompt_template = load_template(prompt_template_path)
         sft_cfg = (config.pipeline.get("training_data") or {}).get("sft", {})
         self.tag_keys = set(sft_cfg.get("tag_keys", [])) or self._FALLBACK_TAG_KEYS
+        # param_keys: LLM 输出 params 的字段列表，必须与 sft_v1.txt §params 结构 对齐
+        # tag_keys: 从 item_profile 中提取哪些字段送入 LLM prompt 作为上下文
+        self.param_keys = (set(sft_cfg.get("param_keys", []))
+                           if sft_cfg.get("param_keys") else set(_PARAM_ORDER_FALLBACK))
         self.concurrency = int(sft_cfg.get("concurrency", 4))
-        self.llm_generator = LLMGenerator(llm_client, self.prompt_template, self.tag_keys)
+        self.llm_generator = LLMGenerator(llm_client, self.prompt_template, self.param_keys)
+        self._param_order = tuple(self.param_keys) if self.param_keys else _PARAM_ORDER_FALLBACK
 
         self._rng = random.Random(42)
         self.scenario_sampler = ScenarioSampler(self._rng)
@@ -269,7 +274,7 @@ class SFTPipeline:
 
     def _write_split(self, samples: list[SFTSample], filename: str) -> None:
         # Use a temporary writer to flush this split
-        writer = SFTSampleWriter(self.output_dir / filename)
+        writer = SFTSampleWriter(self.output_dir / filename, self._param_order)
         writer.write(samples)
 
     def _count_intents(self, samples: list[SFTSample]) -> dict:

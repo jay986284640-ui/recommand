@@ -113,10 +113,13 @@ DIM_ORDER = (
     "brand",
     "avg_prc",
     "distance",
-    "age",
-    "meal_time",
     "occasion",
     "taste",
+)
+
+# PARAM_ORDER fallback — overridden by pipeline.yaml sft.param_keys
+_PARAM_ORDER_FALLBACK = (
+    "category", "brand", "distance", "price", "taste", "occasion", "consumable_type",
 )
 
 # tag_source allowed values per dim (per contracts/item_tags_v2.md §三族枚举)
@@ -126,8 +129,6 @@ TAG_SOURCE_ALLOWED: dict[str, set[str]] = {
     "brand": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
     "avg_prc": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
     "distance": {TagOrigin.GEO, TagOrigin.MISSING},
-    "age": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
-    "meal_time": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
     "occasion": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
     "taste": {TagOrigin.RAW, TagOrigin.AI, TagOrigin.MISSING},
 }
@@ -140,8 +141,6 @@ class TagSource:
     brand: TagOrigin
     avg_prc: TagOrigin
     distance: TagOrigin
-    age: TagOrigin
-    meal_time: TagOrigin
     occasion: TagOrigin
     taste: TagOrigin
 
@@ -152,8 +151,6 @@ class TagSource:
             "brand": self.brand.value,
             "avg_prc": self.avg_prc.value,
             "distance": self.distance.value,
-            "age": self.age.value,
-            "meal_time": self.meal_time.value,
             "occasion": self.occasion.value,
             "taste": self.taste.value,
         }
@@ -183,7 +180,7 @@ class ItemTags:
         }
 
 
-# --- T060: SFTSample / MessageTurn / ParamSpec (Stage 2 output) ----------
+# --- T060: SFTSample / MessageTurn (Stage 3 output) ----------------------
 
 
 @dataclass
@@ -210,12 +207,13 @@ class SFTSample:
     llm_model: str = ""
     _format_version: str = SFT_CORPUS_V
 
-    def to_jsonl_dict(self) -> dict[str, Any]:
+    def to_jsonl_dict(self, param_order: tuple[str, ...] | None = None) -> dict[str, Any]:
+        fields = param_order or _PARAM_ORDER_FALLBACK
         return {
             "messages": [
                 {"role": m.role, "content": m.content} for m in self.messages
             ],
-            "params": {k: self.params.get(k) for k in DIM_ORDER},
+            "params": {k: self.params.get(k) for k in fields},
             "guide_text": self.guide_text,
             "_format_version": self._format_version,
             "_meta": {

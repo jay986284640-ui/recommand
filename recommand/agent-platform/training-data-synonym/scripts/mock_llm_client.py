@@ -287,7 +287,6 @@ class MockLLMClient:
             "merchant":    None,
             "avg_prc":     None,
             "distance":    None,
-            "age":         None,
             "occasion":    None,
             "taste":       None,
         }
@@ -297,13 +296,13 @@ class MockLLMClient:
                 v = ai_tags[k]
                 if k == "taste" and isinstance(v, list):
                     params[k] = {"op": "contains", "values": v}
-                elif k in ("category", "merchant", "avg_prc", "distance", "age", "occasion"):
+                elif k in ("category", "merchant", "avg_prc", "distance", "occasion"):
                     params[k] = {"op": "in", "values": v if isinstance(v, list) else [v]}
                 else:
                     params[k] = {"op": "in", "values": [v]}
 
         # 用户侧 3 维 30% 概率填
-        for k in ("age", "occasion", "taste"):
+        for k in ("occasion", "taste"):
             if ai_tags.get(k) and self._rng.random() < 0.3:
                 v = ai_tags[k]
                 if k == "taste" and isinstance(v, list):

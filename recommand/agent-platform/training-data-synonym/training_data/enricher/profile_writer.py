@@ -4,7 +4,7 @@ Produces ``item_profile.jsonl`` where each line carries the raw columns
 declared in tables.yaml ``columns`` plus the AI-inferred dimensions from
 ``_meta.llm_inference``.
 
-Synthetic fields (type, distance, age) are intentionally excluded.
+Synthetic fields (type, distance) are intentionally excluded.
 ``avg_prc`` comes from the raw column, never from AI inference.
 """
 

@@ -17,7 +17,7 @@ import yaml
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
 
-FIELDS = ["category", "consumable_type", "merchant", "avg_prc", "distance", "age", "occasion", "taste"]
+FIELDS = ["category", "consumable_type", "merchant", "avg_prc", "distance", "occasion", "taste"]
 
 
 def main() -> None:
